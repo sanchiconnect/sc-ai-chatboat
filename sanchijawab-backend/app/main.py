@@ -1220,6 +1220,23 @@ async def list_gateways(_admin: User = Depends(require_super_admin)):
         return out
 
 
+@app.get("/v1/billing/gateways/available")
+async def list_available_gateways(user: CurrentUser = Depends(get_current_user)):
+    """Unlike /v1/billing/gateways (super-admin only, returns client IDs for
+    editing), this is what the checkout UI itself needs: just which gateways
+    a regular customer can actually pay through right now, with no
+    credentials in the response.
+    """
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(PaymentGateway))).scalars().all()
+    configured_field = "test_configured" if settings.payment_mode == "test" else "live_configured"
+    out = []
+    for row in rows:
+        if row.enabled and gateway_out(row)[configured_field]:
+            out.append({"code": row.code, "name": GATEWAY_NAMES.get(row.code, row.code)})
+    return out
+
+
 class GatewayUpsertRequest(BaseModel):
     test_client_id: str | None = None
     test_client_secret: str | None = None
