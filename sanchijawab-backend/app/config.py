@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "SanchiJawab <no-reply@sanchijawab.com>"
+    support_email: str = "support@sanchijawab.com"
     frontend_url: str = "http://localhost:3000"
 
     @property

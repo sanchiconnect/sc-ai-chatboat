@@ -18,7 +18,7 @@ import sentry_sdk
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,7 +51,7 @@ from .services.auth import (
     verify_password,
 )
 from .services.conversations import add_message, get_or_create_conversation, list_messages
-from .services.email import send_invite_email, send_verification_email
+from .services.email import send_email, send_invite_email, send_verification_email
 from .services.parser import DOCLING_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, TABULAR_EXTENSIONS, extension_of
 from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, get_gateway_credentials, upsert_gateway
@@ -1735,6 +1735,32 @@ async def staff_set_bot_status(bot_id: str, body: StaffBotStatusRequest, _staff:
         bot.status = body.status
         await session.commit()
         return {"id": bot.id, "status": bot.status}
+
+
+class ContactRequest(BaseModel):
+    name: str
+    email: EmailStr
+    company: str = ""
+    message: str
+
+    @field_validator("name", "message")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("can't be blank")
+        return v.strip()[:5000]
+
+
+@app.post("/public/contact")
+async def submit_contact(body: ContactRequest):
+    html = f"""
+    <p><strong>From:</strong> {body.name} &lt;{body.email}&gt;</p>
+    <p><strong>Company:</strong> {body.company or "—"}</p>
+    <p><strong>Message:</strong></p>
+    <p>{body.message.replace(chr(10), "<br>")}</p>
+    """
+    email_sent = await send_email(settings.support_email, f"Contact form: {body.name}", html)
+    return {"email_sent": email_sent}
 
 
 @app.get("/health")

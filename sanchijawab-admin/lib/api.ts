@@ -373,6 +373,9 @@ export const api = {
     }
     return resp.json() as Promise<{ source_id: string; job_id: number; status: string }>;
   },
+
+  submitContact: (body: { name: string; email: string; company?: string; message: string }) =>
+    request<{ email_sent: boolean }>("/public/contact", { method: "POST", body: JSON.stringify(body) }),
 };
 
 export { API_URL };
