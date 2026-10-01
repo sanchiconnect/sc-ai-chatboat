@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f6f5fb;
+  --surface: #ffffff;
+  --surface-2: #fbfaff;
+  --border: #e3e1ef;
+  --fg: #1c1a2e;
+  --fg-muted: #6b6880;
+  --fg-faint: #9c99ae;
+  --accent: #3d46c9;
+  --accent-ink: #2c33a0;
+  --accent-soft: #ecebfa;
+  --warm: #f2622e;
+  --warm-soft: #fde7de;
+  --success: #1b9c63;
+  --success-soft: #dff5ea;
+  --warning: #c8860a;
+  --warning-soft: #fcf0d8;
+  --danger: #d3453c;
+  --danger-soft: #fbe3e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15131f;
+    --surface: #1d1a2b;
+    --surface-2: #211e31;
+    --border: #322e45;
+    --fg: #efedfa;
+    --fg-muted: #a6a2be;
+    --fg-faint: #716d8a;
+    --accent: #8489ea;
+    --accent-ink: #c1c4f5;
+    --accent-soft: #2a2a52;
+    --warm: #ff8259;
+    --warm-soft: #3a2a2a;
+    --success: #4fcb92;
+    --success-soft: #16332a;
+    --warning: #e8b23d;
+    --warning-soft: #3a2e12;
+    --danger: #f0776f;
+    --danger-soft: #3a1f20;
+    color-scheme: dark;
+  }
+}
+
+/* Explicit toggle (ThemeToggle component) wins over the OS setting in
+   either direction — see components/ThemeToggle.tsx. */
+:root[data-theme="dark"] {
+  --bg: #15131f;
+  --surface: #1d1a2b;
+  --surface-2: #211e31;
+  --border: #322e45;
+  --fg: #efedfa;
+  --fg-muted: #a6a2be;
+  --fg-faint: #716d8a;
+  --accent: #8489ea;
+  --accent-ink: #c1c4f5;
+  --accent-soft: #2a2a52;
+  --warm: #ff8259;
+  --warm-soft: #3a2a2a;
+  --success: #4fcb92;
+  --success-soft: #16332a;
+  --warning: #e8b23d;
+  --warning-soft: #3a2e12;
+  --danger: #f0776f;
+  --danger-soft: #3a1f20;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
