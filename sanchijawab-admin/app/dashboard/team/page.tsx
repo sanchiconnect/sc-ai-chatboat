@@ -18,6 +18,7 @@ export default function TeamPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   async function load(wsId: string) {
     try {
@@ -59,6 +60,49 @@ export default function TeamPage() {
       setError(err instanceof ApiError ? err.message : "Failed to send invite");
     } finally {
       setInviting(false);
+    }
+  }
+
+  async function changeRole(userId: string, role: string) {
+    if (!workspaceId) return;
+    setBusyUserId(userId);
+    setError(null);
+    try {
+      await api.updateMemberRole(workspaceId, userId, role);
+      await load(workspaceId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to change role");
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function remove(userId: string) {
+    if (!workspaceId) return;
+    setBusyUserId(userId);
+    setError(null);
+    try {
+      await api.removeMember(workspaceId, userId);
+      await load(workspaceId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove member");
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function resend(userId: string) {
+    if (!workspaceId) return;
+    setBusyUserId(userId);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await api.resendInvite(workspaceId, userId);
+      setNotice(res.email_sent ? "Invite resent." : "Invite refreshed, but no email was sent (SMTP not configured).");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to resend invite");
+    } finally {
+      setBusyUserId(null);
     }
   }
 
@@ -115,24 +159,65 @@ export default function TeamPage() {
                   <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Email</th>
                   <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Role</th>
                   <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Status</th>
+                  <th className="p-2.5" />
                 </tr>
               </thead>
               <tbody>
-                {members.map((m) => (
-                  <tr key={m.user_id} className="border-t border-border">
-                    <td className="p-2.5">{m.email}</td>
-                    <td className="p-2.5 capitalize">{m.role}</td>
-                    <td className="p-2.5">
-                      <span
-                        className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          m.active ? "bg-success-soft text-success" : "bg-warning-soft text-warning"
-                        }`}
-                      >
-                        {m.active ? "Active" : "Invite pending"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {members.map((m) => {
+                  const busy = busyUserId === m.user_id;
+                  return (
+                    <tr key={m.user_id} className="border-t border-border">
+                      <td className="p-2.5">{m.email}</td>
+                      <td className="p-2.5 capitalize">
+                        {m.role === "owner" ? (
+                          "Owner"
+                        ) : (
+                          <select
+                            value={m.role}
+                            disabled={busy}
+                            onChange={(e) => changeRole(m.user_id, e.target.value)}
+                            className="border border-border bg-surface-2 rounded-lg px-2 py-1 text-[12.5px] disabled:opacity-50"
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="agent">Agent</option>
+                            <option value="viewer">Viewer</option>
+                          </select>
+                        )}
+                      </td>
+                      <td className="p-2.5">
+                        <span
+                          className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            m.active ? "bg-success-soft text-success" : "bg-warning-soft text-warning"
+                          }`}
+                        >
+                          {m.active ? "Active" : "Invite pending"}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-right whitespace-nowrap">
+                        {m.role !== "owner" && (
+                          <div className="flex gap-3 justify-end">
+                            {!m.active && (
+                              <button
+                                onClick={() => resend(m.user_id)}
+                                disabled={busy}
+                                className="text-[12.5px] font-semibold text-accent-ink hover:underline disabled:opacity-50"
+                              >
+                                Resend
+                              </button>
+                            )}
+                            <button
+                              onClick={() => remove(m.user_id)}
+                              disabled={busy}
+                              className="text-[12.5px] font-semibold text-danger hover:underline disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             </div>
