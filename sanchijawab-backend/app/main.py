@@ -692,6 +692,29 @@ async def list_sources(bot_id: str, user: CurrentUser = Depends(get_current_user
         return result
 
 
+@app.delete("/v1/sources/{source_id}")
+async def delete_source(source_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(404, "Source not found")
+        bot = await session.get(Bot, source.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        # Chunks reference bot_id, not source_id directly, but every chunk
+        # for this source came from one of its documents — look those up
+        # before deleting the documents, so a re-crawled source's other
+        # documents stay untouched.
+        doc_ids = (await session.execute(select(Document.id).where(Document.source_id == source_id))).scalars().all()
+        if doc_ids:
+            await session.execute(delete(Chunk).where(Chunk.document_id.in_(doc_ids)))
+        await session.execute(delete(IngestJob).where(IngestJob.source_id == source_id))
+        await session.execute(delete(Document).where(Document.source_id == source_id))
+        await session.delete(source)
+        await session.commit()
+        return {"deleted": True}
+
+
 # ─── Public widget API — no user auth; bot_id's tenant is looked up ──────
 # server-side, never trusted from the request body. FR-I2 domain allow-list:
 # an empty Bot.allowed_domains means unrestricted (default, back-compat);
