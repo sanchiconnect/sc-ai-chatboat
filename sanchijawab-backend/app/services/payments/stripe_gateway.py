@@ -32,7 +32,10 @@ async def create_order(
         checkout_session = client.v1.checkout.sessions.create(
             {
                 "mode": "payment",
-                "payment_method_types": ["card"],
+                # payment_method_types was removed by Stripe (verified live,
+                # 2026-10) — a current API now manages enabled payment
+                # methods from the Dashboard instead of per-request; omitting
+                # it lets Stripe pick whatever the account has enabled.
                 "line_items": [
                     {
                         "price_data": {
