@@ -19,7 +19,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -33,7 +33,9 @@ sentry_sdk.init(
     release=settings.sentry_release or None,
 )
 from .db import SessionLocal
-from .deps import CurrentUser, get_current_user, require_super_admin, require_workspace_role
+from .deps import (
+    CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
+)
 from .models import (
     BillingProfile, Bot, Conversation, IngestJob, Lead, Membership, Message, Order, PaymentGateway, Plan,
     QAPair, Source, User, Workspace, WidgetConfig,
@@ -43,6 +45,7 @@ from .services.auth import (
     create_access_token,
     create_email_verify_token,
     create_invite_token,
+    create_staff_access_token,
     decode_token,
     hash_password,
     verify_password,
@@ -1433,6 +1436,172 @@ async def get_order_invoice(order_id: str, format: str = "html", user: CurrentUs
                 headers={"Content-Disposition": f'inline; filename="{order.invoice_number}.pdf"'},
             )
         return Response(content=html, media_type="text/html")
+
+
+# ---------------------------------------------------------------------------
+# Staff / Super Admin — a separate platform-operator login and read surface
+# across every tenant. Deliberately its own token type (staff_access, see
+# create_staff_access_token/get_current_staff_user) so a staff session can
+# never be reused on a customer-scoped route or vice versa, and never
+# reachable from inside a customer's own dashboard.
+# ---------------------------------------------------------------------------
+
+
+class StaffLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+@app.post("/v1/staff/login")
+async def staff_login(body: StaffLoginRequest):
+    async with SessionLocal() as session:
+        user = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+        if user is None or not verify_password(body.password, user.password_hash):
+            raise HTTPException(401, "Invalid email or password")
+        if not user.is_super_admin:
+            raise HTTPException(403, "This account doesn't have platform staff access")
+        return {"access_token": create_staff_access_token(user.id)}
+
+
+@app.get("/v1/staff/me")
+async def staff_me(staff: User = Depends(get_current_staff_user)):
+    return {"email": staff.email}
+
+
+async def _workspace_plan_name(session: AsyncSession, workspace_id: str) -> str:
+    order = (
+        await session.execute(
+            select(Order)
+            .where(Order.workspace_id == workspace_id, Order.status == "paid")
+            .order_by(Order.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if order is None or order.plan_id is None:
+        return "Free"
+    plan = await session.get(Plan, order.plan_id)
+    return plan.name if plan else "Free"
+
+
+@app.get("/v1/staff/overview")
+async def staff_overview(_staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        workspace_count = (await session.execute(select(func.count()).select_from(Workspace))).scalar_one()
+        bot_count = (await session.execute(select(func.count()).select_from(Bot))).scalar_one()
+        since = datetime.utcnow() - timedelta(days=30)
+        conversations_30d = (
+            await session.execute(
+                select(func.count()).select_from(Conversation).where(Conversation.started_at >= since)
+            )
+        ).scalar_one()
+        db_size = (await session.execute(text("select pg_size_pretty(pg_database_size(current_database()))"))).scalar_one()
+    return {
+        "workspace_count": workspace_count,
+        "bot_count": bot_count,
+        "conversations_30d": conversations_30d,
+        "db_size": db_size,
+    }
+
+
+@app.get("/v1/staff/workspaces")
+async def staff_list_workspaces(q: str = "", _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        stmt = select(Workspace).order_by(Workspace.created_at.desc())
+        if q:
+            stmt = stmt.where(Workspace.name.ilike(f"%{q}%"))
+        workspaces = (await session.execute(stmt)).scalars().all()
+
+        out = []
+        for ws in workspaces:
+            owner_membership = (
+                await session.execute(
+                    select(Membership).where(Membership.workspace_id == ws.id, Membership.role == "owner")
+                )
+            ).scalar_one_or_none()
+            owner = await session.get(User, owner_membership.user_id) if owner_membership else None
+            if q and owner and q.lower() not in ws.name.lower() and q.lower() not in owner.email.lower():
+                continue
+            bot_count = (
+                await session.execute(select(func.count()).select_from(Bot).where(Bot.workspace_id == ws.id))
+            ).scalar_one()
+            out.append(
+                {
+                    "id": ws.id,
+                    "name": ws.name,
+                    "owner_email": owner.email if owner else "—",
+                    "bot_count": bot_count,
+                    "plan": await _workspace_plan_name(session, ws.id),
+                    "created_at": ws.created_at.isoformat(),
+                }
+            )
+        return out
+
+
+@app.get("/v1/staff/workspaces/{workspace_id}")
+async def staff_get_workspace(workspace_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        ws = await session.get(Workspace, workspace_id)
+        if ws is None:
+            raise HTTPException(404, "Workspace not found")
+
+        memberships = (
+            await session.execute(select(Membership).where(Membership.workspace_id == workspace_id))
+        ).scalars().all()
+        members = []
+        owner_email = "—"
+        for m in memberships:
+            member_user = await session.get(User, m.user_id)
+            if member_user is None:
+                continue
+            if m.role == "owner":
+                owner_email = member_user.email
+            members.append({"name": member_user.email.split("@")[0], "email": member_user.email, "role": m.role})
+
+        bots = (await session.execute(select(Bot).where(Bot.workspace_id == workspace_id))).scalars().all()
+        since = datetime.utcnow() - timedelta(days=30)
+        bot_out = []
+        for bot in bots:
+            conversations_30d = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Conversation)
+                    .where(Conversation.bot_id == bot.id, Conversation.started_at >= since)
+                )
+            ).scalar_one()
+            bot_out.append(
+                {"id": bot.id, "name": bot.name, "status": bot.status, "conversations_30d": conversations_30d}
+            )
+
+        return {
+            "id": ws.id,
+            "name": ws.name,
+            "owner_email": owner_email,
+            "plan": await _workspace_plan_name(session, ws.id),
+            "created_at": ws.created_at.isoformat(),
+            "bots": bot_out,
+            "members": members,
+        }
+
+
+STAFF_BOT_STATUSES = {"live", "pending", "draft", "suspended"}
+
+
+class StaffBotStatusRequest(BaseModel):
+    status: str
+
+
+@app.patch("/v1/staff/bots/{bot_id}/status")
+async def staff_set_bot_status(bot_id: str, body: StaffBotStatusRequest, _staff: User = Depends(get_current_staff_user)):
+    if body.status not in STAFF_BOT_STATUSES:
+        raise HTTPException(422, f"status must be one of {sorted(STAFF_BOT_STATUSES)}")
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        # Moderation action only — never touches persona/instructions/knowledge.
+        bot.status = body.status
+        await session.commit()
+        return {"id": bot.id, "status": bot.status}
 
 
 @app.get("/health")
