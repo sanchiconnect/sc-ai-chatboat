@@ -267,6 +267,70 @@ export const api = {
   }) =>
     request<typeof body>("/v1/billing/profile", { method: "PUT", body: JSON.stringify(body) }),
 
+  listAvailableGateways: () =>
+    request<{ code: "razorpay" | "stripe"; name: string }[]>("/v1/billing/gateways/available"),
+
+  createOrder: (
+    workspaceId: string,
+    body: {
+      plan_id: string;
+      gateway_code: "razorpay" | "stripe";
+      customer_name?: string;
+      customer_gstin?: string;
+      customer_address?: string;
+      customer_city?: string;
+      customer_state?: string;
+      customer_country?: string;
+      customer_pincode?: string;
+      success_url?: string;
+      cancel_url?: string;
+    },
+  ) =>
+    request<{
+      order_id: string; workspace_id: string; plan_id: string; gateway_code: string; payment_mode: string;
+      amount: number; currency: string; status: string; invoice_number: string;
+      razorpay?: { gateway_order_id: string; amount: number; currency: string; key_id: string };
+      stripe?: { gateway_order_id: string; checkout_url: string };
+    }>(`/v1/workspaces/${workspaceId}/orders`, { method: "POST", body: JSON.stringify(body) }),
+
+  confirmOrder: (orderId: string) =>
+    request<{ order_id: string; status: string; invoice_number: string }>(`/v1/orders/${orderId}/confirm`, {
+      method: "POST",
+    }),
+
+  listOrders: (workspaceId: string) =>
+    request<
+      {
+        order_id: string; plan_id: string; gateway_code: string; amount: number; currency: string;
+        status: string; invoice_number: string; created_at: string; paid_at: string | null;
+      }[]
+    >(`/v1/workspaces/${workspaceId}/orders`),
+
+  // The invoice endpoint reads auth from the Authorization header, which a
+  // plain <a href> can't set — fetch it with the header attached and hand
+  // the caller a blob: URL to open/download instead.
+  openInvoice: async (orderId: string, invoiceNumber: string, format: "html" | "pdf" = "pdf") => {
+    const token = getToken();
+    const resp = await fetch(`${API_URL}/v1/orders/${orderId}/invoice?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new ApiError(resp.status, body.detail || `Request failed (${resp.status})`);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    if (format === "pdf") {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${invoiceNumber || orderId}.pdf`;
+      a.click();
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  },
+
   // Not routed through request() — that helper always sets
   // Content-Type: application/json and JSON.stringify()s the body, which
   // breaks multipart uploads. The browser sets the correct multipart
