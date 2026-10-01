@@ -29,16 +29,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <form onSubmit={onSubmit} className="bg-white text-gray-900 rounded-xl shadow p-8 w-full max-w-sm space-y-4">
+    <div className="min-h-screen flex items-center justify-center bg-bg">
+      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
         <h1 className="text-xl font-bold">Log in</h1>
 
-        {error && <div className="text-sm text-red-600 bg-red-50 rounded p-2">{error}</div>}
+        {error && <div className="text-sm text-danger bg-danger-soft rounded p-2">{error}</div>}
 
         <div>
-          <label className="text-sm font-medium">Email</label>
+          <label htmlFor="login-email" className="text-sm font-medium">Email</label>
           <input
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            id="login-email"
+            className="mt-1 w-full border border-border bg-surface text-fg rounded-lg px-3 py-2"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -46,21 +47,21 @@ export default function LoginPage() {
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Password</label>
-          <PasswordInput value={password} onChange={setPassword} required autoComplete="current-password" />
+          <label htmlFor="login-password" className="text-sm font-medium">Password</label>
+          <PasswordInput id="login-password" value={password} onChange={setPassword} required autoComplete="current-password" />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 text-white rounded-lg py-2 font-medium disabled:opacity-50"
+          className="w-full bg-accent text-white rounded-lg py-2 font-medium hover:brightness-90 transition-[filter] disabled:opacity-50"
         >
           {loading ? "Logging in…" : "Log in"}
         </button>
 
-        <p className="text-sm text-center text-gray-500">
+        <p className="text-sm text-center text-fg-muted">
           No account?{" "}
-          <Link href="/signup" className="text-indigo-600">
+          <Link href="/signup" className="text-accent-ink underline underline-offset-2">
             Sign up
           </Link>
         </p>

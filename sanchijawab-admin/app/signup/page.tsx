@@ -30,17 +30,18 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <form onSubmit={onSubmit} className="bg-white text-gray-900 rounded-xl shadow p-8 w-full max-w-sm space-y-4">
+    <div className="min-h-screen flex items-center justify-center bg-bg">
+      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
         <h1 className="text-xl font-bold">Create your account</h1>
-        <p className="text-sm text-gray-500">Free for 14 days. No card needed.</p>
+        <p className="text-sm text-fg-muted">Free for 14 days. No card needed.</p>
 
-        {error && <div className="text-sm text-red-600 bg-red-50 rounded p-2">{error}</div>}
+        {error && <div className="text-sm text-danger bg-danger-soft rounded p-2">{error}</div>}
 
         <div>
-          <label className="text-sm font-medium">Business name</label>
+          <label htmlFor="signup-business" className="text-sm font-medium">Business name</label>
           <input
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            id="signup-business"
+            className="mt-1 w-full border border-border bg-surface text-fg rounded-lg px-3 py-2"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             placeholder="Sharma Organics"
@@ -48,9 +49,10 @@ export default function SignupPage() {
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Work email</label>
+          <label htmlFor="signup-email" className="text-sm font-medium">Work email</label>
           <input
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            id="signup-email"
+            className="mt-1 w-full border border-border bg-surface text-fg rounded-lg px-3 py-2"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -59,21 +61,21 @@ export default function SignupPage() {
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Password</label>
-          <PasswordInput value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" />
+          <label htmlFor="signup-password" className="text-sm font-medium">Password</label>
+          <PasswordInput id="signup-password" value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 text-white rounded-lg py-2 font-medium disabled:opacity-50"
+          className="w-full bg-accent text-white rounded-lg py-2 font-medium hover:brightness-90 transition-[filter] disabled:opacity-50"
         >
           {loading ? "Creating account…" : "Create account"}
         </button>
 
-        <p className="text-sm text-center text-gray-500">
+        <p className="text-sm text-center text-fg-muted">
           Already have an account?{" "}
-          <Link href="/login" className="text-indigo-600">
+          <Link href="/login" className="text-accent-ink underline underline-offset-2">
             Log in
           </Link>
         </p>

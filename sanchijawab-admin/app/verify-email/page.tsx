@@ -27,22 +27,22 @@ function VerifyEmailInner() {
   }, [token]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white text-gray-900 rounded-xl shadow p-8 w-full max-w-sm text-center space-y-4">
-        {status === "loading" && <p className="text-gray-500">Verifying…</p>}
+    <div className="min-h-screen flex items-center justify-center bg-bg">
+      <div className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm text-center space-y-4">
+        {status === "loading" && <p className="text-fg-muted">Verifying…</p>}
         {status === "ok" && (
           <>
             <h1 className="text-xl font-bold">Email verified</h1>
-            <p className="text-sm text-gray-500">You're all set.</p>
+            <p className="text-sm text-fg-muted">You&apos;re all set.</p>
           </>
         )}
         {status === "error" && (
           <>
-            <h1 className="text-xl font-bold text-red-600">Verification failed</h1>
-            <p className="text-sm text-gray-500">{error}</p>
+            <h1 className="text-xl font-bold text-danger">Verification failed</h1>
+            <p className="text-sm text-fg-muted">{error}</p>
           </>
         )}
-        <Link href="/login" className="inline-block text-indigo-600 text-sm">
+        <Link href="/login" className="inline-block text-accent-ink underline underline-offset-2 text-sm">
           Go to login
         </Link>
       </div>
