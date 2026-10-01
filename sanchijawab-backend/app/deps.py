@@ -57,3 +57,24 @@ async def require_super_admin(user: CurrentUser = Depends(get_current_user)) -> 
     if db_user is None or not db_user.is_super_admin:
         raise HTTPException(403, "Requires super admin")
     return db_user
+
+
+async def get_current_staff_user(authorization: str = Header(default="")) -> User:
+    """Gate for the staff/super-admin dashboard routes. Requires a token
+    minted by POST /v1/staff/login (type=staff_access), not an ordinary
+    customer access token — the two are not interchangeable even for the
+    same super-admin user, so a staff session can't leak into customer-scoped
+    requests or vice versa. Re-checks is_super_admin on every call in case it
+    was revoked after the token was issued.
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing or malformed Authorization header")
+    token = authorization.removeprefix("Bearer ")
+    payload = decode_token(token, expected_type="staff_access")
+    if payload is None:
+        raise HTTPException(401, "Invalid or expired staff token")
+    async with SessionLocal() as session:
+        db_user = await session.get(User, payload["sub"])
+    if db_user is None or not db_user.is_super_admin:
+        raise HTTPException(403, "Requires super admin")
+    return db_user

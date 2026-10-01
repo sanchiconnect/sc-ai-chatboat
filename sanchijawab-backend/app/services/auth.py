@@ -21,6 +21,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRES_HOURS = 24 * 7
 EMAIL_VERIFY_TOKEN_EXPIRES_HOURS = 48
 INVITE_TOKEN_EXPIRES_HOURS = 24 * 7
+STAFF_ACCESS_TOKEN_EXPIRES_HOURS = 8
 
 
 def hash_password(password: str) -> str:
@@ -37,6 +38,21 @@ def create_access_token(user_id: str, tenant_id: str) -> str:
         "tenant_id": tenant_id,
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRES_HOURS),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+
+
+def create_staff_access_token(user_id: str) -> str:
+    """Separate token type from create_access_token so a staff session can
+    never be replayed against ordinary customer-scoped routes (and vice
+    versa) — decode_token's expected_type check rejects a mismatch outright.
+    Shorter-lived than a customer session since it grants cross-tenant read
+    access.
+    """
+    payload = {
+        "sub": user_id,
+        "type": "staff_access",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=STAFF_ACCESS_TOKEN_EXPIRES_HOURS),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
