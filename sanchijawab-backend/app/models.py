@@ -92,6 +92,11 @@ class Bot(Base):
     # product's ecosystem already integrates with CRMs (see Make.com usage
     # elsewhere in the workspace).
     crm_webhook_url: Mapped[str] = mapped_column(String(1024), default="")
+    # live|pending|draft|suspended — set by the bot's own owner (live/draft
+    # via Bot settings) or by a super admin as a moderation action
+    # (pending/suspended); staff changes here never touch persona/
+    # instructions/knowledge.
+    status: Mapped[str] = mapped_column(String(16), default="live")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="bots")
