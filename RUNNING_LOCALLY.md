@@ -21,6 +21,11 @@ uv run python -m app.worker
 # 4. Admin dashboard (terminal 3) — from sanchijawab-admin/
 npm run dev
 # open http://localhost:3000
+
+# 5. Marketing website (terminal 4) — from sanchijawab-website/
+npm run dev
+# open http://localhost:3001 (falls back off 3000 automatically since the
+# admin dashboard is already holding it — no manual port flag needed)
 ```
 
 New migration after pulling changes that touched `app/models.py`:
@@ -52,6 +57,11 @@ uv run alembic upgrade head
 - **Widget bundle testing needs a real HTTP origin, not `file://`** — serve
   `sanchijawab-widget/dist/` with e.g. `python -m http.server`, per the main
   README's troubleshooting section.
+- **Admin "Log out" redirects to the marketing site**, not back to its own
+  `/login` — the target comes from `NEXT_PUBLIC_MARKETING_URL` in
+  `sanchijawab-admin/.env.local` (defaults to `http://localhost:3001`). If
+  the website dev server is running on a different port, update that var or
+  the logout button will 404.
 
 ## Payments (Razorpay/Stripe) — test mode specifics
 
