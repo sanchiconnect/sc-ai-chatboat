@@ -171,7 +171,7 @@ export default function Home() {
             </Link>
             <Link
               href={loggedIn ? "/dashboard" : "/signup"}
-              className="bg-accent text-white text-[13.5px] font-semibold rounded-lg px-4 py-2 hover:bg-accent-ink transition-colors"
+              className="bg-accent text-white text-[13.5px] font-semibold rounded-lg px-4 py-2 hover:brightness-90 transition-[filter]"
             >
               {loggedIn ? "Open dashboard" : "Start free"}
             </Link>
@@ -206,7 +206,7 @@ export default function Home() {
             <div className="mt-8 flex items-center gap-4 flex-wrap">
               <Link
                 href={loggedIn ? "/dashboard" : "/signup"}
-                className="bg-accent text-white font-semibold rounded-xl px-6 py-3 text-[15px] hover:bg-accent-ink transition-colors shadow-card"
+                className="bg-accent text-white font-semibold rounded-xl px-6 py-3 text-[15px] hover:brightness-90 transition-[filter] shadow-card"
               >
                 {loggedIn ? "Open dashboard" : "Start free — no card needed"}
               </Link>
@@ -299,7 +299,7 @@ export default function Home() {
                     </ul>
                     <Link
                       href={loggedIn ? "/dashboard" : "/signup"}
-                      className="mt-5 text-center bg-accent text-white rounded-lg px-4 py-2 text-[13.5px] font-semibold hover:bg-accent-ink transition-colors"
+                      className="mt-5 text-center bg-accent text-white rounded-lg px-4 py-2 text-[13.5px] font-semibold hover:brightness-90 transition-[filter]"
                     >
                       {loggedIn ? "Open dashboard" : "Get started"}
                     </Link>
@@ -317,7 +317,7 @@ export default function Home() {
           <p className="mt-2 text-[14.5px] text-fg-muted">Set up takes minutes. The free trial needs no card.</p>
           <Link
             href={loggedIn ? "/dashboard" : "/signup"}
-            className="mt-6 inline-block bg-accent text-white font-semibold rounded-xl px-6 py-3 text-[15px] hover:bg-accent-ink transition-colors shadow-card"
+            className="mt-6 inline-block bg-accent text-white font-semibold rounded-xl px-6 py-3 text-[15px] hover:brightness-90 transition-[filter] shadow-card"
           >
             {loggedIn ? "Open dashboard" : "Start free"}
           </Link>
