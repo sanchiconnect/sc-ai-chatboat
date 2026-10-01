@@ -74,6 +74,18 @@ export const api = {
   listWorkspaces: () =>
     request<{ workspace_id: string; name: string; role: string }[]>("/v1/workspaces"),
 
+  updateWorkspace: (workspaceId: string, name: string) =>
+    request<{ workspace_id: string; name: string }>(`/v1/workspaces/${workspaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ changed: boolean }>("/v1/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
   listMembers: (workspaceId: string) =>
     request<{ user_id: string; email: string; role: string; active: boolean }[]>(
       `/v1/workspaces/${workspaceId}/members`,

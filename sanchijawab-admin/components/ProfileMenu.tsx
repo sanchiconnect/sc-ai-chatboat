@@ -37,17 +37,30 @@ export function ProfileMenu({ email }: { email: string | null }) {
         {open && (
           <div className="absolute right-0 top-full mt-2 w-52 bg-surface border border-border rounded-xl shadow-card p-1.5 z-50">
             {email && <div className="text-xs text-fg-faint px-2.5 py-1.5 truncate">{email}</div>}
-            <button className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-fg hover:bg-surface-2">
+            <button
+              onClick={() => {
+                setOpen(false);
+                router.push("/dashboard/profile");
+              }}
+              className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-fg hover:bg-surface-2"
+            >
               Profile
             </button>
-            <button className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-fg hover:bg-surface-2">
+            <button
+              onClick={() => {
+                setOpen(false);
+                router.push("/dashboard/workspace-settings");
+              }}
+              className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-fg hover:bg-surface-2"
+            >
               Workspace settings
             </button>
             <div className="h-px bg-border my-1" />
             <button
               onClick={() => {
+                setOpen(false);
                 clearToken();
-                router.replace("/login");
+                window.location.href = process.env.NEXT_PUBLIC_MARKETING_URL ?? "/login";
               }}
               className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-danger hover:bg-surface-2"
             >
