@@ -1,0 +1,55 @@
+services:
+  # The app database — app data AND vectors (pgvector extension), both
+  # Phase 0's PoC scripts (app/poc/*) and the real app point here in local
+  # dev. Production points at a Supabase project instead (.env override),
+  # not this container.
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: sanchijawab
+      POSTGRES_USER: sanchijawab
+      POSTGRES_PASSWORD: sanchijawab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host port 55432, not 5432 — this machine already runs a native
+      # Postgres service on 5432 (and something else on 5433). Containers
+      # still reach this one at db:5432 on the compose network; only
+      # host-side tools need 55432.
+      - "55432:5432"
+
+  redis:
+    image: redis:7-alpine
+
+  api:
+    build: ./sanchijawab-backend
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - appdata:/app/data
+
+  worker:
+    build: ./sanchijawab-backend
+    command: python -m app.worker
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - appdata:/app/data
+
+  dashboard:
+    build: ./sanchijawab-admin
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:
+  appdata:

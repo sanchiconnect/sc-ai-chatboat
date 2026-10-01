@@ -1,0 +1,23 @@
+# SanchiJawab is a single repo (unlike SanchiSaas, whose sc-saas-admin/
+# sc-saas-backend/sc-saas-frontend really are separately cloned repos).
+# sanchijawab-backend/admin/widget are folders in THIS repo, tracked
+# normally — only build artifacts and secrets are ignored, below.
+.DS_Store
+.env
+.env.local
+
+# Machine-specific Claude Code overrides
+.claude/settings.local.json
+
+# Python (sanchijawab-backend)
+sanchijawab-backend/.venv/
+sanchijawab-backend/__pycache__/
+sanchijawab-backend/**/__pycache__/
+sanchijawab-backend/**/*.pyc
+sanchijawab-backend/.pytest_cache/
+
+# Node (sanchijawab-admin, sanchijawab-widget)
+sanchijawab-admin/node_modules/
+sanchijawab-admin/.next/
+sanchijawab-widget/node_modules/
+sanchijawab-widget/dist/
