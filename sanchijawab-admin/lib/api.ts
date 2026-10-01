@@ -97,6 +97,21 @@ export const api = {
       { method: "POST", body: JSON.stringify({ email, role }) },
     ),
 
+  resendInvite: (workspaceId: string, userId: string) =>
+    request<{ email_sent: boolean; invite_token: string | null }>(
+      `/v1/workspaces/${workspaceId}/members/${userId}/resend-invite`,
+      { method: "POST" },
+    ),
+
+  updateMemberRole: (workspaceId: string, userId: string, role: string) =>
+    request<{ user_id: string; role: string }>(`/v1/workspaces/${workspaceId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  removeMember: (workspaceId: string, userId: string) =>
+    request<{ removed: boolean }>(`/v1/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
+
   createBot: (workspaceId: string, name: string) =>
     request<{ bot_id: string }>(`/v1/workspaces/${workspaceId}/bots`, {
       method: "POST",
@@ -105,6 +120,8 @@ export const api = {
 
   listBots: (workspaceId: string) =>
     request<{ bot_id: string; name: string; created_at: string }[]>(`/v1/workspaces/${workspaceId}/bots`),
+
+  deleteBot: (botId: string) => request<{ deleted: boolean }>(`/v1/bots/${botId}`, { method: "DELETE" }),
 
   createSource: (botId: string, url: string, visibility: "customer" | "internal" = "customer") =>
     request<{ source_id: string; job_id: number; status: string }>("/v1/sources", {
