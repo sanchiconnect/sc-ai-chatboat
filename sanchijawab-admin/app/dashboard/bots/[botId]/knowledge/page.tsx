@@ -109,9 +109,11 @@ export default function KnowledgePage() {
       <div className="space-y-2">
         {sources.length === 0 && <p className="text-fg-faint text-sm">No sources yet.</p>}
         {sources.map((s) => (
-          <div key={s.source_id} className="bg-surface border border-border rounded-lg px-4 py-3 flex justify-between items-center">
-            <span className="text-sm">{s.url}</span>
-            <StatusBadge status={s.job_status} error={s.job_error} />
+          <div key={s.source_id} className="bg-surface border border-border rounded-lg px-4 py-3 flex justify-between items-center gap-3">
+            <span className="text-sm min-w-0 break-all">{s.url}</span>
+            <span className="shrink-0">
+              <StatusBadge status={s.job_status} error={s.job_error} />
+            </span>
           </div>
         ))}
       </div>
