@@ -504,8 +504,11 @@ export default function BillingPage() {
                     <input
                       className="w-28 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                       placeholder="Pincode"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
                       value={customerForm.customer_pincode}
-                      onChange={(e) => setCustomerForm({ ...customerForm, customer_pincode: e.target.value })}
+                      onChange={(e) => setCustomerForm({ ...customerForm, customer_pincode: e.target.value.replace(/[^0-9]/g, "") })}
                     />
                   </div>
 
@@ -781,8 +784,11 @@ export default function BillingPage() {
                 <input
                   className="w-28 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                   placeholder="Pincode"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
                   value={profile.supplier_pincode}
-                  onChange={(e) => setProfile({ ...profile, supplier_pincode: e.target.value })}
+                  onChange={(e) => setProfile({ ...profile, supplier_pincode: e.target.value.replace(/[^0-9]/g, "") })}
                 />
               </div>
               <div className="flex gap-2">
