@@ -19,7 +19,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -37,8 +37,8 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    BillingProfile, Bot, Conversation, IngestJob, Lead, Membership, Message, Order, PaymentGateway, Plan,
-    QAPair, Source, User, Workspace, WidgetConfig,
+    BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Order,
+    PaymentGateway, Plan, QAPair, Source, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, storage
 from .services.auth import (
@@ -310,6 +310,67 @@ async def invite_member(
         }
 
 
+async def _get_membership_and_target(
+    session: AsyncSession, workspace_id: str, target_user_id: str
+) -> tuple[Membership, User]:
+    membership = (
+        await session.execute(
+            select(Membership).where(Membership.workspace_id == workspace_id, Membership.user_id == target_user_id)
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(404, "Not a member of this workspace")
+    target_user = await session.get(User, target_user_id)
+    if target_user is None:
+        raise HTTPException(404, "User not found")
+    return membership, target_user
+
+
+@app.post("/v1/workspaces/{workspace_id}/members/{target_user_id}/resend-invite")
+async def resend_invite(workspace_id: str, target_user_id: str, user: CurrentUser = Depends(get_current_user)):
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    async with SessionLocal() as session:
+        membership, target_user = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if target_user.password_hash:
+            raise HTTPException(400, "This person has already accepted their invite")
+        workspace = await session.get(Workspace, workspace_id)
+        invite_token = create_invite_token(target_user.id, workspace_id, membership.role)
+        email_sent = await send_invite_email(target_user.email, invite_token, workspace.name)
+        return {"email_sent": email_sent, "invite_token": invite_token}
+
+
+class UpdateMembershipRequest(BaseModel):
+    role: str  # admin|agent|viewer — not owner, ownership isn't transferred through this
+
+
+@app.patch("/v1/workspaces/{workspace_id}/members/{target_user_id}")
+async def update_membership(
+    workspace_id: str, target_user_id: str, body: UpdateMembershipRequest, user: CurrentUser = Depends(get_current_user)
+):
+    if body.role not in ("admin", "agent", "viewer"):
+        raise HTTPException(422, "role must be admin, agent or viewer")
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    async with SessionLocal() as session:
+        membership, _ = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if membership.role == "owner":
+            raise HTTPException(400, "Can't change the workspace owner's role")
+        membership.role = body.role
+        await session.commit()
+        return {"user_id": target_user_id, "role": membership.role}
+
+
+@app.delete("/v1/workspaces/{workspace_id}/members/{target_user_id}")
+async def remove_member(workspace_id: str, target_user_id: str, user: CurrentUser = Depends(get_current_user)):
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    async with SessionLocal() as session:
+        membership, _ = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if membership.role == "owner":
+            raise HTTPException(400, "Can't remove the workspace owner")
+        await session.delete(membership)
+        await session.commit()
+        return {"removed": True}
+
+
 class AcceptInviteRequest(BaseModel):
     token: str
     password: str
@@ -405,6 +466,38 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url,
         }
+
+
+@app.delete("/v1/bots/{bot_id}")
+async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        source_ids = (await session.execute(select(Source.id).where(Source.bot_id == bot_id))).scalars().all()
+        conversation_ids = (
+            await session.execute(select(Conversation.id).where(Conversation.bot_id == bot_id))
+        ).scalars().all()
+
+        # No DB-level ON DELETE CASCADE on these FKs, so children go first,
+        # deepest first, or Postgres rejects the final bot delete.
+        if source_ids:
+            await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
+            await session.execute(delete(Document).where(Document.source_id.in_(source_ids)))
+        if conversation_ids:
+            await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
+            await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
+        await session.execute(delete(Chunk).where(Chunk.bot_id == bot_id))
+        await session.execute(delete(Source).where(Source.bot_id == bot_id))
+        await session.execute(delete(Conversation).where(Conversation.bot_id == bot_id))
+        await session.execute(delete(QAPair).where(QAPair.bot_id == bot_id))
+        await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id == bot_id))
+        await session.execute(delete(ToolConnection).where(ToolConnection.bot_id == bot_id))
+        await session.delete(bot)
+        await session.commit()
+        return {"deleted": True}
 
 
 DEFAULT_WIDGET_TEXTS = {"welcome": "Hi! Ask me anything.", "header": "Chat with us"}
