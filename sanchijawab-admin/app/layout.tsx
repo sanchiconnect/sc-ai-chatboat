@@ -19,7 +19,7 @@ const THEME_INIT_SCRIPT = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${sora.variable}`}>
+    <html lang="en" className={`${fraunces.variable} ${sora.variable}`} suppressHydrationWarning>
       <head>
         {/* Runs before paint so an explicit saved theme choice never flashes
             the wrong one on load — can't do this with a useEffect alone. */}
