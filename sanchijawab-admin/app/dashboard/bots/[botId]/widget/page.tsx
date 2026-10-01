@@ -73,7 +73,7 @@ export default function WidgetSettingsPage() {
                 key={c}
                 type="button"
                 onClick={() => setColor(c)}
-                className={`w-8 h-8 rounded-full border-2 ${color === c ? "border-black" : "border-transparent"}`}
+                className={`w-8 h-8 rounded-full border-2 ${color === c ? "border-fg" : "border-transparent"}`}
                 style={{ background: c }}
                 aria-label={c}
               />

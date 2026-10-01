@@ -30,6 +30,9 @@ export function ProfileMenu({ email }: { email: string | null }) {
       <div className="relative" ref={ref}>
         <button
           onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Account menu"
           className="w-9 h-9 rounded-full bg-accent-soft text-accent-ink border border-border flex items-center justify-center font-bold text-sm"
         >
           {initialsFor(email)}
