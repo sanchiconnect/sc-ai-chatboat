@@ -162,6 +162,24 @@ async def me(user: CurrentUser = Depends(get_current_user)):
     return {"user_id": user.user_id, "tenant_id": user.tenant_id, "email": email, "is_super_admin": is_super_admin}
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/v1/auth/change-password")
+async def change_password(body: ChangePasswordRequest, user: CurrentUser = Depends(get_current_user)):
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    async with SessionLocal() as session:
+        db_user = await session.get(User, user.user_id)
+        if db_user is None or not verify_password(body.current_password, db_user.password_hash):
+            raise HTTPException(401, "Current password is incorrect")
+        db_user.password_hash = hash_password(body.new_password)
+        await session.commit()
+        return {"changed": True}
+
+
 class VerifyEmailRequest(BaseModel):
     token: str
 
@@ -196,6 +214,22 @@ async def list_workspaces(user: CurrentUser = Depends(get_current_user)):
             )
         ).all()
         return [{"workspace_id": w.id, "name": w.name, "role": role} for w, role in rows]
+
+
+class UpdateWorkspaceRequest(BaseModel):
+    name: str
+
+
+@app.patch("/v1/workspaces/{workspace_id}")
+async def update_workspace(workspace_id: str, body: UpdateWorkspaceRequest, user: CurrentUser = Depends(get_current_user)):
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        workspace.name = body.name.strip() or workspace.name
+        await session.commit()
+        return {"workspace_id": workspace.id, "name": workspace.name}
 
 
 class InviteRequest(BaseModel):
