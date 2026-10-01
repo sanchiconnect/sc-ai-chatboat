@@ -27,6 +27,7 @@ export default function DashboardOverview() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -64,6 +65,21 @@ export default function DashboardOverview() {
     }
   }
 
+  async function deleteBot(e: React.MouseEvent, botId: string) {
+    e.preventDefault(); // the card itself is a link to the bot's settings
+    e.stopPropagation();
+    if (!window.confirm("Delete this bot? This removes its knowledge, conversations and leads too — it can't be undone.")) return;
+    setDeletingId(botId);
+    try {
+      await api.deleteBot(botId);
+      setBots((prev) => prev.filter((b) => b.bot_id !== botId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete bot");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
       <WorkspaceSidebar workspaceName={workspace?.name ?? "…"} active="/dashboard" />
@@ -88,14 +104,25 @@ export default function DashboardOverview() {
               <a
                 key={b.bot_id}
                 href={`/dashboard/bots/${b.bot_id}/settings`}
-                className="bg-surface border border-border rounded-2xl shadow-card p-4 flex flex-col gap-2.5 hover:border-accent"
+                className="relative bg-surface border border-border rounded-2xl shadow-card p-4 flex flex-col gap-2.5 hover:border-accent"
               >
+                <button
+                  onClick={(e) => deleteBot(e, b.bot_id)}
+                  disabled={deletingId === b.bot_id}
+                  aria-label={`Delete ${b.name}`}
+                  title="Delete bot"
+                  className="absolute top-2.5 right-2.5 w-6 h-6 rounded-md flex items-center justify-center text-fg-faint hover:text-danger hover:bg-danger-soft disabled:opacity-50"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" />
+                  </svg>
+                </button>
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-[10px] bg-accent text-white flex items-center justify-center font-bold">
                     {b.name.slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-[14px] truncate">{b.name}</div>
+                    <div className="font-semibold text-[14px] truncate pr-5">{b.name}</div>
                     <div className="text-[11.5px] text-fg-faint">
                       Created {new Date(b.created_at).toLocaleDateString()}
                     </div>
