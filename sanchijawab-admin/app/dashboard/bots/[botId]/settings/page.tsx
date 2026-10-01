@@ -79,7 +79,7 @@ export default function BotSettingsPage() {
       <div>
         <label className="text-sm font-medium">Avatar</label>
         <p className="text-xs text-fg-muted mb-2">
-          Shown in the chat widget's header, next to its name below.
+          Shown in the chat widget&apos;s header, next to its name below.
         </p>
         <div className="flex flex-wrap gap-2">
           {AVATAR_PRESETS.map((preset) => (
