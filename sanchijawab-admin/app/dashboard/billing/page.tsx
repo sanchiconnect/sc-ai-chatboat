@@ -733,6 +733,16 @@ export default function BillingPage() {
                       }
                     />
                   </div>
+                  <label className="mt-3 flex items-center gap-2 text-[12.5px] font-medium text-fg">
+                    <input
+                      type="checkbox"
+                      checked={gatewayForms[g.code]?.enabled ?? g.enabled}
+                      onChange={(e) =>
+                        setGatewayForms((prev) => ({ ...prev, [g.code]: { ...prev[g.code], enabled: e.target.checked } }))
+                      }
+                    />
+                    Enabled for checkout
+                  </label>
                   <button
                     onClick={() => saveGateway(g.code)}
                     disabled={savingGateway === g.code}
