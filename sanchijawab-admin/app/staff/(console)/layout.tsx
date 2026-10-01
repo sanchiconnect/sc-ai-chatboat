@@ -1,0 +1,57 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getStaffToken, clearStaffToken, staffApi, StaffApiError } from "@/lib/staff-api";
+
+export default function StaffConsoleLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getStaffToken()) {
+      router.replace("/staff/login");
+      return;
+    }
+    staffApi
+      .me()
+      .then((res) => setEmail(res.email))
+      .catch((err) => {
+        if (err instanceof StaffApiError) clearStaffToken();
+        router.replace("/staff/login");
+      });
+  }, [router]);
+
+  if (!email) return null;
+
+  return (
+    <div className="min-h-screen bg-bg">
+      <header className="border-b border-border">
+        <div className="max-w-[1240px] mx-auto px-4 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-[30px] h-[30px] rounded-lg bg-fg text-bg flex items-center justify-center font-display font-semibold text-sm flex-none">
+              S
+            </div>
+            <div>
+              <div className="font-bold text-sm leading-tight">SanchiJawab &middot; Super Admin</div>
+              <div className="text-[11px] text-fg-faint leading-tight">Platform operator view — not visible to customers</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-fg-faint hidden sm:inline">{email}</span>
+            <button
+              onClick={() => {
+                clearStaffToken();
+                router.replace("/staff/login");
+              }}
+              className="text-[12.5px] font-semibold text-danger border border-border rounded-lg px-3 py-1.5 hover:bg-surface-2"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+      </header>
+      <main className="max-w-[1240px] mx-auto px-4 py-5">{children}</main>
+    </div>
+  );
+}
