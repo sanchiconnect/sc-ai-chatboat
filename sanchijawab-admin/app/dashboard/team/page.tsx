@@ -108,6 +108,7 @@ export default function TeamPage() {
         <div className="bg-surface border border-border rounded-2xl shadow-card overflow-hidden">
           {loading && <p className="text-fg-muted text-sm p-4">Loading…</p>}
           {!loading && (
+            <div className="overflow-x-auto">
             <table className="w-full text-[13px] border-collapse">
               <thead className="bg-surface-2 text-left">
                 <tr>
@@ -134,6 +135,7 @@ export default function TeamPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </main>

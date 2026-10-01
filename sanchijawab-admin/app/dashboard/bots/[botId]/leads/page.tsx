@@ -105,7 +105,8 @@ export default function LeadsPage() {
       {!loading && leads.length === 0 && <p className="text-sm text-fg-muted">No leads captured yet.</p>}
 
       {leads.length > 0 && (
-        <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+        <div className="border border-border rounded-lg overflow-x-auto">
+        <table className="w-full text-sm">
           <thead className="bg-surface-2 text-left">
             <tr>
               <th className="p-2">Name</th>
@@ -133,6 +134,7 @@ export default function LeadsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );
