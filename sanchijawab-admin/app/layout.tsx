@@ -6,8 +6,17 @@ const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
 const sora = Sora({ subsets: ["latin"], variable: "--font-sora" });
 
 export const metadata: Metadata = {
-  title: "SanchiJawab",
-  description: "AI chatbot trained on your website and files",
+  metadataBase: new URL("https://sanchijawab.com"),
+  title: { default: "SanchiJawab — Your website, now answering every question", template: "%s · SanchiJawab" },
+  description:
+    "Paste your URL, get a branded AI assistant that answers from your own content, live on your site in under 15 minutes.",
+  openGraph: {
+    title: "SanchiJawab",
+    description: "Your website, now answering every question.",
+    siteName: "SanchiJawab",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 const THEME_INIT_SCRIPT = `
