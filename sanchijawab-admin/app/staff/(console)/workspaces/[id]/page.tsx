@@ -23,6 +23,8 @@ export default function StaffWorkspaceDetailPage() {
   const params = useParams<{ id: string }>();
   const [ws, setWs] = useState<StaffWorkspaceDetail | null>(null);
   const [savingBotId, setSavingBotId] = useState<string | null>(null);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [memberNotice, setMemberNotice] = useState<string | null>(null);
 
   function load() {
     staffApi.getWorkspace(params.id).then(setWs);
@@ -37,6 +39,38 @@ export default function StaffWorkspaceDetailPage() {
       load();
     } finally {
       setSavingBotId(null);
+    }
+  }
+
+  async function changeRole(userId: string, role: string) {
+    setBusyUserId(userId);
+    try {
+      await staffApi.updateMemberRole(params.id, userId, role);
+      load();
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!window.confirm("Remove this person from the workspace?")) return;
+    setBusyUserId(userId);
+    try {
+      await staffApi.removeMember(params.id, userId);
+      load();
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function resendInvite(userId: string) {
+    setBusyUserId(userId);
+    setMemberNotice(null);
+    try {
+      const res = await staffApi.resendInvite(params.id, userId);
+      setMemberNotice(res.email_sent ? "Invite resent." : "Invite refreshed, but no email was sent (SMTP not configured).");
+    } finally {
+      setBusyUserId(null);
     }
   }
 
@@ -89,30 +123,84 @@ export default function StaffWorkspaceDetailPage() {
       </div>
 
       <div className="bg-surface border border-border rounded-2xl shadow-card p-5">
-        <div className="text-[15px] font-semibold mb-3">Members</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[15px] font-semibold">Members</div>
+          {memberNotice && <span className="text-[12px] text-success">{memberNotice}</span>}
+        </div>
         <table className="w-full text-[13px] border-collapse">
           <thead className="text-left">
             <tr>
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Name</th>
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Email</th>
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Role</th>
+              <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Status</th>
+              <th className="p-2" />
             </tr>
           </thead>
           <tbody>
-            {ws.members.map((m) => (
-              <tr key={m.email} className="border-t border-border">
-                <td className="p-2 capitalize">{m.name}</td>
-                <td className="p-2 text-fg-muted">{m.email}</td>
-                <td className="p-2 capitalize">{m.role}</td>
-              </tr>
-            ))}
+            {ws.members.map((m) => {
+              const busy = busyUserId === m.user_id;
+              return (
+                <tr key={m.user_id} className="border-t border-border">
+                  <td className="p-2 capitalize">{m.name}</td>
+                  <td className="p-2 text-fg-muted">{m.email}</td>
+                  <td className="p-2 capitalize">
+                    {m.role === "owner" ? (
+                      "Owner"
+                    ) : (
+                      <select
+                        value={m.role}
+                        disabled={busy}
+                        onChange={(e) => changeRole(m.user_id, e.target.value)}
+                        className="border border-border bg-surface-2 rounded-lg px-2 py-1 text-[12px] disabled:opacity-50"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="agent">Agent</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    )}
+                  </td>
+                  <td className="p-2">
+                    <span
+                      className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                        m.active ? "bg-[var(--success-soft)] text-success" : "bg-[var(--warning-soft)] text-warning"
+                      }`}
+                    >
+                      {m.active ? "Active" : "Pending"}
+                    </span>
+                  </td>
+                  <td className="p-2 text-right whitespace-nowrap">
+                    {m.role !== "owner" && (
+                      <div className="flex gap-3 justify-end">
+                        {!m.active && (
+                          <button
+                            onClick={() => resendInvite(m.user_id)}
+                            disabled={busy}
+                            className="text-[12px] font-semibold text-accent-ink hover:underline disabled:opacity-50"
+                          >
+                            Resend
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeMember(m.user_id)}
+                          disabled={busy}
+                          className="text-[12px] font-semibold text-danger hover:underline disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       <p className="text-[12px] text-fg-faint px-1">
-        Support access only — staff can see usage figures and the team roster here to help debug or
-        answer a billing question. They never see conversation transcripts or bot content without the
+        Support access only — staff can manage membership (role, removal, resending an invite) to help
+        with an account issue, but never see conversation transcripts or bot content without the
         owner&apos;s permission.
       </p>
     </div>

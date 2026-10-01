@@ -1688,7 +1688,10 @@ async def staff_get_workspace(workspace_id: str, _staff: User = Depends(get_curr
                 continue
             if m.role == "owner":
                 owner_email = member_user.email
-            members.append({"name": member_user.email.split("@")[0], "email": member_user.email, "role": m.role})
+            members.append({
+                "user_id": member_user.id, "name": member_user.email.split("@")[0], "email": member_user.email,
+                "role": m.role, "active": bool(member_user.password_hash),
+            })
 
         bots = (await session.execute(select(Bot).where(Bot.workspace_id == workspace_id))).scalars().all()
         since = datetime.utcnow() - timedelta(days=30)
@@ -1735,6 +1738,52 @@ async def staff_set_bot_status(bot_id: str, body: StaffBotStatusRequest, _staff:
         bot.status = body.status
         await session.commit()
         return {"id": bot.id, "status": bot.status}
+
+
+# Staff-scoped membership management — same actions a workspace's own
+# Owner/Admin has for their own team (resend/change role/remove), but staff
+# have no membership row of their own in a customer's workspace to check via
+# require_workspace_role, so these are separate routes gated purely by
+# get_current_staff_user. A support action, same boundary as bot moderation
+# above: never touches a bot's content, never reads conversation transcripts.
+
+
+@app.post("/v1/staff/workspaces/{workspace_id}/members/{target_user_id}/resend-invite")
+async def staff_resend_invite(workspace_id: str, target_user_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        membership, target_user = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if target_user.password_hash:
+            raise HTTPException(400, "This person has already accepted their invite")
+        workspace = await session.get(Workspace, workspace_id)
+        invite_token = create_invite_token(target_user.id, workspace_id, membership.role)
+        email_sent = await send_invite_email(target_user.email, invite_token, workspace.name)
+        return {"email_sent": email_sent}
+
+
+@app.patch("/v1/staff/workspaces/{workspace_id}/members/{target_user_id}")
+async def staff_update_membership(
+    workspace_id: str, target_user_id: str, body: UpdateMembershipRequest, _staff: User = Depends(get_current_staff_user)
+):
+    if body.role not in ("admin", "agent", "viewer"):
+        raise HTTPException(422, "role must be admin, agent or viewer")
+    async with SessionLocal() as session:
+        membership, _ = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if membership.role == "owner":
+            raise HTTPException(400, "Can't change the workspace owner's role")
+        membership.role = body.role
+        await session.commit()
+        return {"user_id": target_user_id, "role": membership.role}
+
+
+@app.delete("/v1/staff/workspaces/{workspace_id}/members/{target_user_id}")
+async def staff_remove_member(workspace_id: str, target_user_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        membership, _ = await _get_membership_and_target(session, workspace_id, target_user_id)
+        if membership.role == "owner":
+            raise HTTPException(400, "Can't remove the workspace owner")
+        await session.delete(membership)
+        await session.commit()
+        return {"removed": True}
 
 
 class ContactRequest(BaseModel):

@@ -63,9 +63,11 @@ export interface StaffWorkspaceBot {
 }
 
 export interface StaffWorkspaceMember {
+  user_id: string;
   name: string;
   email: string;
   role: string;
+  active: boolean;
 }
 
 export interface StaffWorkspaceDetail {
@@ -99,4 +101,18 @@ export const staffApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+
+  resendInvite: (workspaceId: string, userId: string) =>
+    request<{ email_sent: boolean }>(`/v1/staff/workspaces/${workspaceId}/members/${userId}/resend-invite`, {
+      method: "POST",
+    }),
+
+  updateMemberRole: (workspaceId: string, userId: string, role: string) =>
+    request<{ user_id: string; role: string }>(`/v1/staff/workspaces/${workspaceId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  removeMember: (workspaceId: string, userId: string) =>
+    request<{ removed: boolean }>(`/v1/staff/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
 };
