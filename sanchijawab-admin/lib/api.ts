@@ -137,6 +137,9 @@ export const api = {
       { source_id: string; url: string; visibility: string; job_status: string | null; job_error: string | null }[]
     >(`/v1/bots/${botId}/sources`),
 
+  deleteSource: (sourceId: string) =>
+    request<{ deleted: boolean }>(`/v1/sources/${sourceId}`, { method: "DELETE" }),
+
   getBot: (botId: string) =>
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
