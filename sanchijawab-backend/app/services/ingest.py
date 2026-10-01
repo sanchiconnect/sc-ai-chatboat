@@ -1,0 +1,106 @@
+"""Ingestion orchestrator: crawl/parse -> chunk -> embed -> store.
+
+Chunk text, its pgvector embedding, and its generated tsvector all live
+in the same `chunks` row/database — no separate vector store to keep in
+sync. Function signature is the stable contract routers/worker call —
+matches the migration brief's "keep function signatures the same so
+rag.py and ingest.py don't need to change" intent, applied here since
+these files are new.
+"""
+from __future__ import annotations
+
+import hashlib
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models import Chunk, Document, Source
+from . import storage
+from .chunker import chunk_text
+from .crawler import crawl_site
+from .embeddings import embed_texts
+from .parser import TABULAR_EXTENSIONS, extension_of, parse_to_markdown
+from .tabular import parse_tabular_to_chunks
+
+
+async def store_document(
+    session: AsyncSession, source: Source, doc: Document | None, url: str, pieces: list[str], stats: dict
+) -> None:
+    """Shared embed -> store step for website pages and files. `pieces` are
+    already-chunked text (word-count windows for prose, one row per chunk
+    for spreadsheets — chunking strategy is decided by the caller)."""
+    content_hash = hashlib.sha256("\n\n".join(pieces).encode("utf-8")).hexdigest()
+
+    if doc and doc.content_hash == content_hash:
+        stats["skipped"] += 1
+        return  # unchanged since last ingest — don't re-embed
+
+    if doc is None:
+        doc = Document(source_id=source.id, tenant_id=source.tenant_id, url=url)
+        session.add(doc)
+        await session.flush()
+    else:
+        await session.execute(delete(Chunk).where(Chunk.document_id == doc.id))
+
+    doc.content_hash = content_hash
+    doc.status = "indexed"
+
+    if not pieces:
+        doc.status = "failed"
+        doc.error = "no extractable content"
+        return
+
+    vectors = embed_texts(pieces)
+    for text, vector in zip(pieces, vectors):
+        chunk = Chunk(
+            tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
+            visibility=source.visibility, text=text, embedding=vector,
+        )
+        session.add(chunk)
+        stats["chunks"] += 1
+
+    stats["pages"] += 1
+
+
+async def ingest_website_source(session: AsyncSession, source: Source, max_pages: int | None = None) -> dict:
+    # Was silently hardcoded to 6 pages regardless of source.max_pages (DB
+    # default 5000) or settings.max_pages_per_site — every crawl, including
+    # "whole domain" ones, was actually only ever indexing 6 pages. That's
+    # why real sites with more than a handful of pages produced incomplete
+    # answers: the rest of the content was never crawled at all.
+    pages = await crawl_site(source.url, max_pages=max_pages or source.max_pages)
+    stats = {"pages": 0, "chunks": 0, "skipped": 0}
+
+    for url, markdown in pages:
+        doc = (
+            await session.execute(
+                select(Document).where(Document.source_id == source.id, Document.url == url)
+            )
+        ).scalar_one_or_none()
+        await store_document(session, source, doc, url, chunk_text(markdown), stats)
+
+    await session.commit()
+    return stats
+
+
+async def ingest_file_source(session: AsyncSession, source: Source) -> dict:
+    """source.file_key must already be uploaded to S3 (done at upload time,
+    not here) — this just fetches, parses, chunks, embeds, stores."""
+    stats = {"pages": 0, "chunks": 0, "skipped": 0}
+    filename = source.file_key.rsplit("/", 1)[-1]
+    data = storage.download_bytes(source.file_key)
+
+    if extension_of(filename) in TABULAR_EXTENSIONS:
+        pieces = parse_tabular_to_chunks(filename, data)
+    else:
+        pieces = chunk_text(parse_to_markdown(filename, data))
+
+    doc = (
+        await session.execute(
+            select(Document).where(Document.source_id == source.id, Document.url == filename)
+        )
+    ).scalar_one_or_none()
+    await store_document(session, source, doc, filename, pieces, stats)
+
+    await session.commit()
+    return stats

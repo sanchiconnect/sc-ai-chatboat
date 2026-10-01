@@ -1,0 +1,59 @@
+"""FastAPI auth dependencies — extract + verify the bearer token, and
+check workspace role membership (FR-A3).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from fastapi import Depends, Header, HTTPException
+from sqlalchemy import select
+
+from .db import SessionLocal
+from .models import Membership, User
+from .services.auth import decode_token
+
+ROLE_RANK = {"viewer": 0, "agent": 1, "admin": 2, "owner": 3}
+
+
+@dataclass
+class CurrentUser:
+    user_id: str
+    tenant_id: str
+
+
+async def get_current_user(authorization: str = Header(default="")) -> CurrentUser:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing or malformed Authorization header")
+    token = authorization.removeprefix("Bearer ")
+    payload = decode_token(token, expected_type="access")
+    if payload is None:
+        raise HTTPException(401, "Invalid or expired token")
+    return CurrentUser(user_id=payload["sub"], tenant_id=payload["tenant_id"])
+
+
+async def require_workspace_role(workspace_id: str, user: CurrentUser, min_role: str) -> Membership:
+    async with SessionLocal() as session:
+        membership = (
+            await session.execute(
+                select(Membership).where(
+                    Membership.workspace_id == workspace_id, Membership.user_id == user.user_id
+                )
+            )
+        ).scalar_one_or_none()
+
+    if membership is None:
+        raise HTTPException(403, "Not a member of this workspace")
+    if ROLE_RANK.get(membership.role, -1) < ROLE_RANK.get(min_role, 99):
+        raise HTTPException(403, f"Requires role >= {min_role}, has {membership.role}")
+    return membership
+
+
+async def require_super_admin(user: CurrentUser = Depends(get_current_user)) -> User:
+    """Platform-level gate, independent of any workspace membership/role —
+    for actions like editing pricing plans that aren't scoped to one tenant.
+    """
+    async with SessionLocal() as session:
+        db_user = await session.get(User, user.user_id)
+    if db_user is None or not db_user.is_super_admin:
+        raise HTTPException(403, "Requires super admin")
+    return db_user
