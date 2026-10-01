@@ -21,6 +21,35 @@ type BillingProfile = {
   supplier_state: string; supplier_country: string; supplier_pincode: string; supplier_email: string; supplier_phone: string;
 };
 
+type Gateway2 = { code: "razorpay" | "stripe"; name: string };
+
+type OrderRow = {
+  order_id: string; plan_id: string; gateway_code: string; amount: number; currency: string;
+  status: string; invoice_number: string; created_at: string; paid_at: string | null;
+};
+
+const EMPTY_CUSTOMER = {
+  customer_name: "", customer_gstin: "", customer_address: "",
+  customer_city: "", customer_state: "", customer_country: "India", customer_pincode: "",
+};
+
+declare global {
+  interface Window {
+    Razorpay: new (options: Record<string, unknown>) => { open: () => void };
+  }
+}
+
+function loadRazorpayScript(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Couldn't load Razorpay checkout"));
+    document.body.appendChild(script);
+  });
+}
+
 const EMPTY_FORM = {
   name: "", price_text: "", tagline: "", featuresText: "", is_active: true, sort_order: 0,
   amountText: "", currency: "INR",
@@ -41,11 +70,19 @@ function formFromPlan(p: Plan) {
 
 export default function BillingPage() {
   const [workspaceName, setWorkspaceName] = useState("…");
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [availableGateways, setAvailableGateways] = useState<Gateway2[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null);
+  const [customerForm, setCustomerForm] = useState(EMPTY_CUSTOMER);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -70,6 +107,14 @@ export default function BillingPage() {
     }
   }
 
+  async function loadOrders(wsId: string) {
+    try {
+      setOrders(await api.listOrders(wsId));
+    } catch {
+      // non-fatal — the orders history is a nice-to-have, not the main flow
+    }
+  }
+
   useEffect(() => {
     api.me().then((m) => {
       setEmail(m.email);
@@ -79,8 +124,39 @@ export default function BillingPage() {
         api.getBillingProfile().then(setProfile).catch(() => {});
       }
     }).catch(() => {});
-    api.listWorkspaces().then((list) => {
-      if (list[0]) setWorkspaceName(list[0].name);
+    api.listAvailableGateways().then(setAvailableGateways).catch(() => {});
+    api.listWorkspaces().then(async (list) => {
+      const ws = list[0];
+      if (!ws) return;
+      setWorkspaceName(ws.name);
+      setWorkspaceId(ws.workspace_id);
+      await loadOrders(ws.workspace_id);
+
+      // Stripe redirects the browser back here after checkout. We don't know
+      // the order id until after creating it (too late to bake into the
+      // success_url we send Stripe up front), so pay() stashes it in
+      // sessionStorage before leaving the page and we pick it up here —
+      // confirming server-side, which re-verifies with Stripe rather than
+      // ever trusting the redirect alone.
+      const pendingOrderId = sessionStorage.getItem("sj_pending_order_id");
+      if (pendingOrderId) {
+        sessionStorage.removeItem("sj_pending_order_id");
+        try {
+          await api.confirmOrder(pendingOrderId);
+          setCheckoutNotice({ kind: "success", text: "Payment confirmed — your invoice is ready below." });
+        } catch (err) {
+          setCheckoutNotice({
+            kind: "error",
+            text:
+              err instanceof ApiError && err.status === 402
+                ? "That checkout wasn't completed, so nothing was charged."
+                : err instanceof ApiError
+                  ? err.message
+                  : "We couldn't confirm that payment — contact support if you were charged.",
+          });
+        }
+        await loadOrders(ws.workspace_id);
+      }
     });
     loadPlans();
   }, []);
@@ -142,6 +218,70 @@ export default function BillingPage() {
     }
   }
 
+  function startCheckout(plan: Plan) {
+    setCheckoutNotice(null);
+    setCustomerForm(EMPTY_CUSTOMER);
+    setCheckoutPlan(plan);
+  }
+
+  async function pay(gatewayCode: "razorpay" | "stripe") {
+    if (!checkoutPlan || !workspaceId) return;
+    setCheckingOut(true);
+    setCheckoutNotice(null);
+    try {
+      const returnUrl = new URL(window.location.href);
+      returnUrl.search = "";
+      const order = await api.createOrder(workspaceId, {
+        plan_id: checkoutPlan.plan_id,
+        gateway_code: gatewayCode,
+        ...customerForm,
+        success_url: returnUrl.toString(),
+        cancel_url: returnUrl.toString(),
+      });
+
+      if (gatewayCode === "stripe" && order.stripe) {
+        sessionStorage.setItem("sj_pending_order_id", order.order_id);
+        window.location.href = order.stripe.checkout_url;
+        return;
+      }
+
+      if (gatewayCode === "razorpay" && order.razorpay) {
+        await loadRazorpayScript();
+        const rzp = new window.Razorpay({
+          key: order.razorpay.key_id,
+          amount: order.razorpay.amount,
+          currency: order.razorpay.currency,
+          order_id: order.razorpay.gateway_order_id,
+          name: "SanchiJawab",
+          description: checkoutPlan.name,
+          prefill: { name: customerForm.customer_name, email: email || "" },
+          theme: { color: "#3D46C9" },
+          handler: async () => {
+            try {
+              await api.confirmOrder(order.order_id);
+              setCheckoutNotice({ kind: "success", text: "Payment confirmed — your invoice is ready below." });
+              setCheckoutPlan(null);
+              if (workspaceId) await loadOrders(workspaceId);
+            } catch (err) {
+              setCheckoutNotice({
+                kind: "error",
+                text: err instanceof ApiError ? err.message : "Payment went through but confirmation failed — contact support.",
+              });
+            }
+          },
+          modal: {
+            ondismiss: () => setCheckingOut(false),
+          },
+        });
+        rzp.open();
+        return; // leave checkingOut true until the modal's handler/ondismiss fires
+      }
+    } catch (err) {
+      setCheckoutNotice({ kind: "error", text: err instanceof ApiError ? err.message : "Couldn't start checkout" });
+    }
+    setCheckingOut(false);
+  }
+
   function gatewayFormValue(code: string, field: string, fallback: string) {
     return (gatewayForms[code]?.[field as keyof Gateway] as string | undefined) ?? fallback;
   }
@@ -196,13 +336,22 @@ export default function BillingPage() {
             <p className="text-[13px] text-fg-muted mt-0.5">
               {isSuperAdmin
                 ? "You're a super admin — plans, gateways and GST details here are editable and feed the public pricing page + invoices."
-                : "Self-serve checkout isn't live on the dashboard yet — plans below show what's planned."}
+                : "Subscribe to a plan below, or contact us for a custom one."}
             </p>
           </div>
           <ProfileMenu email={email} />
         </div>
 
         {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3 mb-4">{error}</div>}
+        {checkoutNotice && (
+          <div
+            className={`text-[13px] rounded-lg p-3 mb-4 ${
+              checkoutNotice.kind === "success" ? "text-success bg-success-soft" : "text-danger bg-danger-soft"
+            }`}
+          >
+            {checkoutNotice.text}
+          </div>
+        )}
 
         {loading && <p className="text-fg-muted text-sm">Loading…</p>}
 
@@ -260,6 +409,27 @@ export default function BillingPage() {
                     </button>
                   </div>
                 )}
+                {!isSuperAdmin && (
+                  <div className="mt-4 pt-3 border-t border-border">
+                    {p.purchasable ? (
+                      <button
+                        onClick={() => startCheckout(p)}
+                        disabled={availableGateways.length === 0}
+                        className="w-full bg-accent text-white rounded-lg py-2 text-[13px] font-semibold hover:brightness-90 transition-[filter] disabled:opacity-50"
+                        title={availableGateways.length === 0 ? "No payment gateway is configured yet" : undefined}
+                      >
+                        Subscribe
+                      </button>
+                    ) : (
+                      <a
+                        href="/contact"
+                        className="block text-center w-full border border-border rounded-lg py-2 text-[13px] font-semibold text-fg hover:bg-surface-2"
+                      >
+                        Contact sales
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -278,6 +448,147 @@ export default function BillingPage() {
               </div>
             )}
           </div>
+        )}
+
+        {checkoutPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !checkingOut && setCheckoutPlan(null)}>
+            <div
+              className="bg-surface border border-border rounded-2xl shadow-card p-5 w-full max-w-md space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <h3 className="font-display text-[16px] font-semibold">Subscribe to {checkoutPlan.name}</h3>
+                <p className="text-[12.5px] text-fg-muted mt-0.5">
+                  {checkoutPlan.price_text} &middot; billed via {availableGateways.map((g) => g.name).join(" or ")}
+                </p>
+              </div>
+
+              {availableGateways.length === 0 ? (
+                <p className="text-[13px] text-danger">No payment gateway is configured yet — contact support.</p>
+              ) : (
+                <>
+                  <p className="text-[11.5px] text-fg-faint">
+                    Used for your GST invoice. Leave GSTIN blank for a consumer (non-business) invoice.
+                  </p>
+                  <input
+                    className="w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                    placeholder="Billing name"
+                    value={customerForm.customer_name}
+                    onChange={(e) => setCustomerForm({ ...customerForm, customer_name: e.target.value })}
+                  />
+                  <input
+                    className="w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                    placeholder="GSTIN (optional)"
+                    value={customerForm.customer_gstin}
+                    onChange={(e) => setCustomerForm({ ...customerForm, customer_gstin: e.target.value })}
+                  />
+                  <input
+                    className="w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                    placeholder="Address"
+                    value={customerForm.customer_address}
+                    onChange={(e) => setCustomerForm({ ...customerForm, customer_address: e.target.value })}
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      placeholder="City"
+                      value={customerForm.customer_city}
+                      onChange={(e) => setCustomerForm({ ...customerForm, customer_city: e.target.value })}
+                    />
+                    <input
+                      className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      placeholder="State"
+                      value={customerForm.customer_state}
+                      onChange={(e) => setCustomerForm({ ...customerForm, customer_state: e.target.value })}
+                    />
+                    <input
+                      className="w-28 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      placeholder="Pincode"
+                      value={customerForm.customer_pincode}
+                      onChange={(e) => setCustomerForm({ ...customerForm, customer_pincode: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    {availableGateways.map((g) => (
+                      <button
+                        key={g.code}
+                        onClick={() => pay(g.code)}
+                        disabled={checkingOut}
+                        className="flex-1 bg-accent text-white rounded-lg py-2 text-[13px] font-semibold hover:brightness-90 transition-[filter] disabled:opacity-50"
+                      >
+                        {checkingOut ? "Processing…" : `Pay with ${g.name}`}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <button
+                onClick={() => setCheckoutPlan(null)}
+                disabled={checkingOut}
+                className="w-full text-center text-[12.5px] font-semibold text-fg-muted hover:text-fg pt-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isSuperAdmin && orders.length > 0 && (
+          <>
+            <h2 className="mt-10 mb-3 font-display text-[18px] font-semibold">Orders &amp; invoices</h2>
+            <div className="bg-surface border border-border rounded-2xl shadow-card overflow-x-auto">
+              <table className="w-full text-[13px] border-collapse">
+                <thead className="bg-surface-2 text-left">
+                  <tr>
+                    <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Date</th>
+                    <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Amount</th>
+                    <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Status</th>
+                    <th className="p-2.5 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Invoice</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((o) => (
+                    <tr key={o.order_id} className="border-t border-border">
+                      <td className="p-2.5">{new Date(o.created_at).toLocaleDateString()}</td>
+                      <td className="p-2.5 tabular">
+                        {o.currency} {o.amount.toFixed(2)}
+                      </td>
+                      <td className="p-2.5">
+                        <span
+                          className={`text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                            o.status === "paid"
+                              ? "text-success bg-success-soft"
+                              : o.status === "failed"
+                                ? "text-danger bg-danger-soft"
+                                : "text-fg-faint bg-surface-2"
+                          }`}
+                        >
+                          {o.status}
+                        </span>
+                      </td>
+                      <td className="p-2.5">
+                        {o.status === "paid" ? (
+                          <button
+                            onClick={() =>
+                              api.openInvoice(o.order_id, o.invoice_number).catch((err) =>
+                                setError(err instanceof ApiError ? err.message : "Couldn't open invoice"),
+                              )
+                            }
+                            className="text-[12.5px] font-semibold text-accent-ink hover:underline"
+                          >
+                            Download PDF
+                          </button>
+                        ) : (
+                          <span className="text-fg-faint">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {(creating || editingId) && isSuperAdmin && (
