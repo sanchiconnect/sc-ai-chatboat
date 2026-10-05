@@ -53,6 +53,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Deactivated by a super admin as an account-level support action —
+    # distinct from removing a Membership (which only revokes one
+    # workspace). Enforced in deps.get_current_user, not just at login, so
+    # an already-issued token stops working immediately on deactivation.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
