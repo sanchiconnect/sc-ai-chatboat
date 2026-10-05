@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from langfuse import propagate_attributes
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Bot
+from ..models import Bot, Conversation
 from . import llm, retrieval
 from .tracing import get_langfuse
 
@@ -39,6 +39,25 @@ async def answer_stream(
 ) -> AsyncIterator[dict]:
     history = history or []
 
+    # Conversation memory beyond the last 10 turns (SAN-1093, FR-C5): the
+    # widget sends its full local history on every request, but only the
+    # most recent 10 turns go to the model directly — anything older is
+    # folded into a rolling per-conversation summary instead of being
+    # dropped outright. Only the *newly* overflowed slice gets summarized
+    # each time (summary_msg_count tracks how much is already folded in),
+    # so cost doesn't grow with conversation length.
+    summary_context = ""
+    older = history[:-10] if len(history) > 10 else []
+    if older and conversation_id:
+        conv = await session.get(Conversation, conversation_id)
+        if conv is not None:
+            if len(older) > conv.summary_msg_count:
+                newly_aged_out = older[conv.summary_msg_count:]
+                conv.summary = await llm.summarize_history(conv.summary, newly_aged_out)
+                conv.summary_msg_count = len(older)
+                await session.commit()
+            summary_context = conv.summary
+
     with get_langfuse().start_as_current_observation(
         name="chat-answer", as_type="span", input=message,
     ) as root_span, propagate_attributes(
@@ -46,7 +65,7 @@ async def answer_stream(
         user_id=visitor_id,
         tags=[f"tenant:{tenant_id}", f"bot:{bot_id}"],
     ):
-        analysis = await llm.fast_analyze(message, history)
+        analysis = await llm.fast_analyze(message, history, summary_context)
         if analysis.get("handoff_requested"):
             root_span.update(output={"handoff_requested": True})
             yield {"type": "handoff"}
@@ -66,7 +85,7 @@ async def answer_stream(
             instructions = bot.instructions if bot else ""
 
             full_text = ""
-            async for delta in llm.stream_answer(business_name, language, message, "", persona, instructions):
+            async for delta in llm.stream_answer(business_name, language, message, "", persona, instructions, summary_context):
                 full_text += delta
                 yield {"type": "delta", "text": delta}
 
@@ -89,7 +108,7 @@ async def answer_stream(
         instructions = bot.instructions if bot else ""
 
         full_text = ""
-        async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions):
+        async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions, summary_context):
             full_text += delta
             yield {"type": "delta", "text": delta}
 

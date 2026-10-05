@@ -60,6 +60,7 @@ from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, get_gateway_credentials, upsert_gateway
 from .services.payments.invoice import compute_gst_split, generate_invoice_html, render_invoice_pdf
 from .services.payments.sequence import next_invoice_number
+from .services.pii import mask_pii
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
 from .services.tracing import get_langfuse
@@ -1114,9 +1115,13 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
             elif full_text:
                 # confidence is a crude proxy (0.0/1.0), not a real score — just
                 # enough to power the "unanswered/low-confidence" report (FR-R2).
+                # mask_pii is a backstop for the *stored* transcript (Inbox,
+                # analytics, exports) — ANSWER_SYSTEM already tells the model
+                # not to echo contact details back, which is what actually
+                # protects the live-streamed response already sent above.
                 msg = await add_message(
                     session, conversation_id=conversation_id, tenant_id=bot.tenant_id,
-                    role="bot", content=full_text, sources=sources,
+                    role="bot", content=mask_pii(full_text), sources=sources,
                     confidence=0.0 if no_answer else 1.0,
                 )
                 await session.commit()

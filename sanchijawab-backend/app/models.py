@@ -209,6 +209,13 @@ class Conversation(Base):
     language: Mapped[str] = mapped_column(String(16), default="en")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Rolling summary of every turn older than the last 10 (SAN-1093, FR-C5)
+    # — summary_msg_count is how many of the client-sent history's older
+    # messages are already folded in, so a long-running conversation only
+    # ever summarizes the *newly* overflowed turns, not the whole history
+    # from scratch on every single message.
+    summary: Mapped[str] = mapped_column(Text, default="")
+    summary_msg_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Message(Base):
