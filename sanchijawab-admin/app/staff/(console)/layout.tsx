@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getStaffToken, clearStaffToken, staffApi, StaffApiError } from "@/lib/staff-api";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function StaffConsoleLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -22,7 +23,13 @@ export default function StaffConsoleLayout({ children }: { children: React.React
       });
   }, [router]);
 
-  if (!email) return null;
+  if (!email) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="h-6 w-6 rounded-full border-2 border-border border-t-accent animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-bg">
@@ -39,6 +46,7 @@ export default function StaffConsoleLayout({ children }: { children: React.React
           </div>
           <div className="flex items-center gap-3">
             <span className="text-[12px] text-fg-faint hidden sm:inline">{email}</span>
+            <ThemeToggle />
             <button
               onClick={() => {
                 clearStaffToken();

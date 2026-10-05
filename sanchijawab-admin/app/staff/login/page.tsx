@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { staffApi, setStaffToken, StaffApiError } from "@/lib/staff-api";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function StaffLoginPage() {
   const router = useRouter();
@@ -27,7 +28,10 @@ export default function StaffLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg">
+    <div className="min-h-screen flex items-center justify-center bg-bg relative">
+      <div className="absolute top-5 right-5">
+        <ThemeToggle />
+      </div>
       <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
         <div className="flex items-center gap-2.5 pb-1">
           <div className="w-8 h-8 rounded-lg bg-fg text-bg flex items-center justify-center font-display font-semibold text-sm flex-none">
