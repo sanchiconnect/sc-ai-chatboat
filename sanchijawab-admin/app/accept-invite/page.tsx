@@ -42,7 +42,7 @@ function AcceptInviteInner() {
 
         <div>
           <label htmlFor="invite-password" className="text-sm font-medium">Password</label>
-          <PasswordInput id="invite-password" value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" />
+          <PasswordInput id="invite-password" value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" allowGenerate />
         </div>
 
         <button

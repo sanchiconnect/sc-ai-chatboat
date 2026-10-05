@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { PasswordInput } from "@/components/PasswordInput";
 import { resolveWorkspace } from "@/lib/workspace-store";
 
 export default function ProfilePage() {
@@ -95,14 +96,15 @@ export default function ProfilePage() {
             />
           </div>
           <div>
-            <label className="text-[12.5px] font-medium">New password</label>
-            <input
-              type="password"
+            <label htmlFor="profile-new-password" className="text-[12.5px] font-medium">New password</label>
+            <PasswordInput
+              id="profile-new-password"
+              value={newPassword}
+              onChange={setNewPassword}
               required
               minLength={8}
-              className="mt-1 w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              allowGenerate
             />
           </div>
           <button

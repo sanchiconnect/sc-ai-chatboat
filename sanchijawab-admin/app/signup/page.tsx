@@ -62,7 +62,7 @@ export default function SignupPage() {
         </div>
         <div>
           <label htmlFor="signup-password" className="text-sm font-medium">Password</label>
-          <PasswordInput id="signup-password" value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" />
+          <PasswordInput id="signup-password" value={password} onChange={setPassword} required minLength={8} autoComplete="new-password" allowGenerate />
         </div>
 
         <button
