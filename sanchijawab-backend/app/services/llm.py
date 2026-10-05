@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
 import httpx
 from google import genai
@@ -217,6 +218,7 @@ async def stream_answer(
     ) as generation:
         full_text = ""
         last_chunk = None
+        first_token_at: datetime | None = None
         for attempt in range(MAX_ATTEMPTS):
             yielded_any = False
             try:
@@ -240,6 +242,12 @@ async def stream_answer(
                         blocked = True
                         break
                     if chunk.text:
+                        if first_token_at is None:
+                            # First-token latency (SAN-1117/SAN-1129) — Langfuse's
+                            # own completion_start_time field, so its UI/API
+                            # computes "time to first token" the same way it
+                            # would for a native-streaming integration.
+                            first_token_at = datetime.now(timezone.utc)
                         yielded_any = True
                         full_text += chunk.text
                         yield chunk.text
@@ -254,6 +262,7 @@ async def stream_answer(
                     generation.update(
                         output=full_text, usage_details=_usage_details(last_chunk),
                         level="WARNING", status_message="Output blocked by safety filtering",
+                        completion_start_time=first_token_at,
                     )
                     yield notice
                     return
@@ -272,7 +281,10 @@ async def stream_answer(
                     yield notice
                     return
 
-                generation.update(output=full_text, usage_details=_usage_details(last_chunk))
+                generation.update(
+                    output=full_text, usage_details=_usage_details(last_chunk),
+                    completion_start_time=first_token_at,
+                )
                 return  # completed cleanly
             except RETRYABLE_EXCEPTIONS:
                 logger.warning(
@@ -289,6 +301,7 @@ async def stream_answer(
                     generation.update(
                         output=full_text, usage_details=_usage_details(last_chunk),
                         level="WARNING", status_message="Connection interrupted mid-stream after partial output",
+                        completion_start_time=first_token_at,
                     )
                     yield notice
                     return

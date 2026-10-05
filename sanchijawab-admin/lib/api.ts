@@ -303,6 +303,11 @@ export const api = {
       `/v1/bots/${botId}/analytics/unanswered?days=${days}`,
     ),
 
+  getCrawlSuccess: (botId: string, days = 30) =>
+    request<{ days: number; total_jobs: number; by_status: Record<string, number>; success_rate: number | null }>(
+      `/v1/bots/${botId}/analytics/crawl-success?days=${days}`,
+    ),
+
   addQaPair: (botId: string, question: string, answer: string) =>
     request<{ qa_pair_id: string; question: string; answer: string }>(`/v1/bots/${botId}/qa-pairs`, {
       method: "POST",

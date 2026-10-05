@@ -1457,6 +1457,36 @@ async def analytics_unanswered(bot_id: str, days: int = 30, user: CurrentUser = 
         return results
 
 
+@app.get("/v1/bots/{bot_id}/analytics/crawl-success")
+async def analytics_crawl_success(bot_id: str, days: int = 30, user: CurrentUser = Depends(get_current_user)):
+    """Crawl success rate KPI (SAN-1117) — done/failed/cancelled counts for
+    this bot's website-source ingest jobs over the window, so a customer
+    can see at a glance whether their sources are actually indexing
+    cleanly rather than silently failing."""
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        rows = (
+            await session.execute(
+                select(IngestJob.status, func.count())
+                .join(Source, IngestJob.source_id == Source.id)
+                .where(Source.bot_id == bot_id, Source.type == "website", IngestJob.created_at >= cutoff)
+                .group_by(IngestJob.status)
+            )
+        ).all()
+        by_status = {status: count for status, count in rows}
+        total = sum(by_status.values())
+        done = by_status.get("done", 0)
+        return {
+            "days": days, "total_jobs": total, "by_status": by_status,
+            "success_rate": round(done / total, 4) if total else None,
+        }
+
+
 class QAPairRequest(BaseModel):
     question: str
     answer: str

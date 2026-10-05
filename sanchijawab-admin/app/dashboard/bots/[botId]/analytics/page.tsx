@@ -16,6 +16,7 @@ type Summary = {
 };
 
 type Unanswered = { message_id: string; question: string | null; bot_answer: string; created_at: string };
+type CrawlSuccess = { days: number; total_jobs: number; by_status: Record<string, number>; success_rate: number | null };
 
 function pct(n: number | null): string {
   return n === null ? "—" : `${Math.round(n * 100)}%`;
@@ -70,16 +71,18 @@ export default function AnalyticsPage() {
   const { botId } = useParams<{ botId: string }>();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [unanswered, setUnanswered] = useState<Unanswered[]>([]);
+  const [crawlSuccess, setCrawlSuccess] = useState<CrawlSuccess | null>(null);
   const [days, setDays] = useState(30);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   function load() {
     setLoading(true);
-    Promise.all([api.getAnalyticsSummary(botId, days), api.getUnanswered(botId, days)])
-      .then(([s, u]) => {
+    Promise.all([api.getAnalyticsSummary(botId, days), api.getUnanswered(botId, days), api.getCrawlSuccess(botId, days)])
+      .then(([s, u, c]) => {
         setSummary(s);
         setUnanswered(u);
+        setCrawlSuccess(c);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load analytics"))
       .finally(() => setLoading(false));
@@ -115,6 +118,7 @@ export default function AnalyticsPage() {
               { label: "Handoffs", value: summary.handoff_count },
               { label: "Leads captured", value: summary.leads_count },
               { label: "Message satisfaction*", value: pct(summary.message_satisfaction_rate) },
+              { label: "Crawl success rate", value: crawlSuccess ? pct(crawlSuccess.success_rate) : "—" },
             ].map((card) => (
               <div key={card.label} className="border border-border rounded-lg p-3">
                 <p className="text-xs text-fg-muted">{card.label}</p>
