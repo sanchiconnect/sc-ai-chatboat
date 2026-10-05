@@ -9,7 +9,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 
 from .db import SessionLocal
-from .models import Membership, User
+from .models import Membership, User, Workspace
 from .services.auth import decode_token
 
 ROLE_RANK = {"viewer": 0, "agent": 1, "admin": 2, "owner": 3}
@@ -40,6 +40,7 @@ async def get_current_user(authorization: str = Header(default="")) -> CurrentUs
 
 async def require_workspace_role(workspace_id: str, user: CurrentUser, min_role: str) -> Membership:
     async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
         membership = (
             await session.execute(
                 select(Membership).where(
@@ -48,6 +49,11 @@ async def require_workspace_role(workspace_id: str, user: CurrentUser, min_role:
             )
         ).scalar_one_or_none()
 
+    # Checked even before membership, so a deactivated workspace blocks every
+    # member equally — this is a workspace-wide gate, separate from any one
+    # member's own User.is_active.
+    if workspace is not None and not workspace.is_active:
+        raise HTTPException(403, "This workspace has been deactivated")
     if membership is None:
         raise HTTPException(403, "Not a member of this workspace")
     if ROLE_RANK.get(membership.role, -1) < ROLE_RANK.get(min_role, 99):
