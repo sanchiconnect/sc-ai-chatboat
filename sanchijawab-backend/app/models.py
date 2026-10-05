@@ -107,6 +107,12 @@ class Bot(Base):
     # (pending/suspended); staff changes here never touch persona/
     # instructions/knowledge.
     status: Mapped[str] = mapped_column(String(16), default="live")
+    # Set every time the public widget config endpoint is hit (FR-I3 install
+    # check) — lets the dashboard show "yes, we've actually seen this script
+    # tag load on your site" instead of just "here's the snippet, hope it
+    # works."
+    widget_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    widget_last_seen_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="bots")

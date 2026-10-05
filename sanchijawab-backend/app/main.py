@@ -435,6 +435,27 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
         }
 
 
+@app.get("/v1/bots/{bot_id}/install-check")
+async def install_check(bot_id: str, user: CurrentUser = Depends(get_current_user)):
+    """FR-I3 — "detect widget loaded on given URL, show status." We can't
+    reach out and probe the customer's site ourselves (no guarantee it's
+    even public, and a server-side fetch wouldn't execute the script tag
+    anyway) — so this reports the most recent real evidence we have: the
+    last time the widget's own config endpoint was actually hit, and from
+    which host, which only happens if the script tag is really on the page.
+    """
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        return {
+            "installed": bot.widget_last_seen_at is not None,
+            "last_seen_at": bot.widget_last_seen_at.isoformat() if bot.widget_last_seen_at else None,
+            "last_seen_host": bot.widget_last_seen_host,
+        }
+
+
 class UpdateBotRequest(BaseModel):
     name: str | None = None
     persona: str | None = None
@@ -755,6 +776,14 @@ async def public_widget_config(bot_id: str, request: Request):
         if bot is None:
             raise HTTPException(404, "Bot not found")
         _enforce_domain_allowlist(bot, request)
+        # FR-I3 install check: every real page load of the widget hits this
+        # endpoint, so recording it here (not the chat endpoint, which only
+        # fires once a visitor actually sends a message) is what lets the
+        # dashboard say "yes, we've seen the script tag load" right after
+        # install, before anyone's asked it anything.
+        bot.widget_last_seen_at = datetime.utcnow()
+        bot.widget_last_seen_host = _request_hostname(request)
+        await session.commit()
         config = await session.get(WidgetConfig, bot_id)
         texts = (config.texts_json if config else None) or DEFAULT_WIDGET_TEXTS
         return {
