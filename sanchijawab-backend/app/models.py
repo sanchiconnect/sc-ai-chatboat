@@ -39,6 +39,11 @@ class Workspace(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Deactivated by a super admin — distinct from a member's own is_active:
+    # this blocks the workspace itself (every member's dashboard access to
+    # it, and every one of its bots' public widgets), regardless of whether
+    # any individual member account is otherwise fine.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     bots: Mapped[list["Bot"]] = relationship(back_populates="workspace")
