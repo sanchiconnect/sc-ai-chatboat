@@ -147,6 +147,8 @@ async def login(body: LoginRequest):
         user = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
         if user is None or not verify_password(body.password, user.password_hash):
             raise HTTPException(401, "Invalid email or password")
+        if not user.is_active:
+            raise HTTPException(403, "This account has been deactivated")
         # Re-synced on every login (not just at signup) so adding an email to
         # SUPERADMIN_EMAILS promotes an existing account on its next login.
         should_be_admin = _is_bootstrap_superadmin(user.email)
@@ -1591,6 +1593,8 @@ async def staff_login(body: StaffLoginRequest):
         user = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
         if user is None or not verify_password(body.password, user.password_hash):
             raise HTTPException(401, "Invalid email or password")
+        if not user.is_active:
+            raise HTTPException(403, "This account has been deactivated")
         if not user.is_super_admin:
             raise HTTPException(403, "This account doesn't have platform staff access")
         return {"access_token": create_staff_access_token(user.id)}
@@ -1691,6 +1695,7 @@ async def staff_get_workspace(workspace_id: str, _staff: User = Depends(get_curr
             members.append({
                 "user_id": member_user.id, "name": member_user.email.split("@")[0], "email": member_user.email,
                 "role": m.role, "active": bool(member_user.password_hash),
+                "account_active": member_user.is_active,
             })
 
         bots = (await session.execute(select(Bot).where(Bot.workspace_id == workspace_id))).scalars().all()
@@ -1784,6 +1789,86 @@ async def staff_remove_member(workspace_id: str, target_user_id: str, _staff: Us
         await session.delete(membership)
         await session.commit()
         return {"removed": True}
+
+
+# Staff-scoped account-credential actions — deliberately separate from the
+# membership endpoints above. Editing a user's email/password/active status
+# is account-level (affects every workspace they belong to), not scoped to
+# one workspace the way role/remove/resend-invite are, and it's identity-
+# level enough that it's worth its own explicit, narrow set of routes rather
+# than folding it into staff_update_membership.
+
+
+class StaffUpdateEmailRequest(BaseModel):
+    email: EmailStr
+
+
+@app.patch("/v1/staff/users/{target_user_id}/email")
+async def staff_update_email(target_user_id: str, body: StaffUpdateEmailRequest, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        target_user = await session.get(User, target_user_id)
+        if target_user is None:
+            raise HTTPException(404, "User not found")
+        existing = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+        if existing is not None and existing.id != target_user_id:
+            raise HTTPException(400, "That email is already in use by another account")
+        old_email = target_user.email
+        target_user.email = body.email
+        await session.commit()
+        await send_email(
+            old_email,
+            "Your SanchiJawab account email was changed",
+            f"<p>Your login email was changed from {old_email} to {body.email} by SanchiJawab support. "
+            f"If you didn't request this, contact {settings.support_email} immediately.</p>",
+        )
+        return {"user_id": target_user_id, "email": target_user.email}
+
+
+class StaffResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@app.post("/v1/staff/users/{target_user_id}/reset-password")
+async def staff_reset_password(target_user_id: str, body: StaffResetPasswordRequest, _staff: User = Depends(get_current_staff_user)):
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    async with SessionLocal() as session:
+        target_user = await session.get(User, target_user_id)
+        if target_user is None:
+            raise HTTPException(404, "User not found")
+        target_user.password_hash = hash_password(body.new_password)
+        await session.commit()
+        email_sent = await send_email(
+            target_user.email,
+            "Your SanchiJawab password was reset",
+            f"<p>Your password was reset by SanchiJawab support. If you didn't request this, "
+            f"contact {settings.support_email} immediately.</p>",
+        )
+        return {"user_id": target_user_id, "email_sent": email_sent}
+
+
+@app.post("/v1/staff/users/{target_user_id}/deactivate")
+async def staff_deactivate_user(target_user_id: str, _staff: User = Depends(get_current_staff_user)):
+    if target_user_id == _staff.id:
+        raise HTTPException(400, "Can't deactivate your own account")
+    async with SessionLocal() as session:
+        target_user = await session.get(User, target_user_id)
+        if target_user is None:
+            raise HTTPException(404, "User not found")
+        target_user.is_active = False
+        await session.commit()
+        return {"user_id": target_user_id, "is_active": False}
+
+
+@app.post("/v1/staff/users/{target_user_id}/reactivate")
+async def staff_reactivate_user(target_user_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        target_user = await session.get(User, target_user_id)
+        if target_user is None:
+            raise HTTPException(404, "User not found")
+        target_user.is_active = True
+        await session.commit()
+        return {"user_id": target_user_id, "is_active": True}
 
 
 class ContactRequest(BaseModel):
