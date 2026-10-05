@@ -53,6 +53,7 @@ export interface StaffWorkspaceSummary {
   bot_count: number;
   plan: string;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface StaffWorkspaceBot {
@@ -77,6 +78,7 @@ export interface StaffWorkspaceDetail {
   owner_email: string;
   plan: string;
   created_at: string;
+  is_active: boolean;
   bots: StaffWorkspaceBot[];
   members: StaffWorkspaceMember[];
 }
@@ -134,4 +136,17 @@ export const staffApi = {
 
   reactivateUser: (userId: string) =>
     request<{ user_id: string; is_active: boolean }>(`/v1/staff/users/${userId}/reactivate`, { method: "POST" }),
+
+  deactivateWorkspace: (workspaceId: string) =>
+    request<{ workspace_id: string; is_active: boolean }>(`/v1/staff/workspaces/${workspaceId}/deactivate`, {
+      method: "POST",
+    }),
+
+  reactivateWorkspace: (workspaceId: string) =>
+    request<{ workspace_id: string; is_active: boolean }>(`/v1/staff/workspaces/${workspaceId}/reactivate`, {
+      method: "POST",
+    }),
+
+  deleteWorkspace: (workspaceId: string) =>
+    request<{ deleted: boolean }>(`/v1/staff/workspaces/${workspaceId}`, { method: "DELETE" }),
 };
