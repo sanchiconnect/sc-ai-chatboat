@@ -782,8 +782,15 @@ class ChatRequest(BaseModel):
 async def public_chat(bot_id: str, body: ChatRequest, request: Request):
     async with SessionLocal() as session:
         bot = await session.get(Bot, bot_id)
+        workspace = await session.get(Workspace, bot.workspace_id) if bot else None
     if bot is None:
         raise HTTPException(404, "Bot not found")
+    if bot.status != "live":
+        # Was previously never checked anywhere — a super admin "suspending"
+        # a bot updated this field but the widget kept answering regardless.
+        raise HTTPException(403, "This assistant isn't currently available")
+    if workspace is None or not workspace.is_active:
+        raise HTTPException(403, "This assistant isn't currently available")
     _enforce_domain_allowlist(bot, request)
 
     async with SessionLocal() as session:
@@ -1670,6 +1677,7 @@ async def staff_list_workspaces(q: str = "", _staff: User = Depends(get_current_
                     "bot_count": bot_count,
                     "plan": await _workspace_plan_name(session, ws.id),
                     "created_at": ws.created_at.isoformat(),
+                    "is_active": ws.is_active,
                 }
             )
         return out
@@ -1720,6 +1728,7 @@ async def staff_get_workspace(workspace_id: str, _staff: User = Depends(get_curr
             "owner_email": owner_email,
             "plan": await _workspace_plan_name(session, ws.id),
             "created_at": ws.created_at.isoformat(),
+            "is_active": ws.is_active,
             "bots": bot_out,
             "members": members,
         }
@@ -1870,6 +1879,81 @@ async def staff_reactivate_user(target_user_id: str, _staff: User = Depends(get_
         target_user.is_active = True
         await session.commit()
         return {"user_id": target_user_id, "is_active": True}
+
+
+@app.post("/v1/staff/workspaces/{workspace_id}/deactivate")
+async def staff_deactivate_workspace(workspace_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        workspace.is_active = False
+        await session.commit()
+        return {"workspace_id": workspace_id, "is_active": False}
+
+
+@app.post("/v1/staff/workspaces/{workspace_id}/reactivate")
+async def staff_reactivate_workspace(workspace_id: str, _staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        workspace.is_active = True
+        await session.commit()
+        return {"workspace_id": workspace_id, "is_active": True}
+
+
+@app.delete("/v1/staff/workspaces/{workspace_id}")
+async def staff_delete_workspace(workspace_id: str, _staff: User = Depends(get_current_staff_user)):
+    """Irreversible — deletes the workspace and everything in it (bots,
+    knowledge, conversations, leads, orders) plus any user whose only
+    membership was here. Same cascade order as delete_bot (Chunk before
+    Document, same FK reason), just scoped to every bot in the workspace
+    instead of one.
+    """
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+
+        bot_ids = (await session.execute(select(Bot.id).where(Bot.workspace_id == workspace_id))).scalars().all()
+        source_ids = (await session.execute(select(Source.id).where(Source.bot_id.in_(bot_ids)))).scalars().all()
+        conversation_ids = (
+            await session.execute(select(Conversation.id).where(Conversation.bot_id.in_(bot_ids)))
+        ).scalars().all()
+        member_user_ids = (
+            await session.execute(select(Membership.user_id).where(Membership.workspace_id == workspace_id))
+        ).scalars().all()
+
+        if conversation_ids:
+            await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
+            await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
+        if bot_ids:
+            await session.execute(delete(Chunk).where(Chunk.bot_id.in_(bot_ids)))
+        if source_ids:
+            await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
+            await session.execute(delete(Document).where(Document.source_id.in_(source_ids)))
+        if bot_ids:
+            await session.execute(delete(Source).where(Source.bot_id.in_(bot_ids)))
+            await session.execute(delete(Conversation).where(Conversation.bot_id.in_(bot_ids)))
+            await session.execute(delete(QAPair).where(QAPair.bot_id.in_(bot_ids)))
+            await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id.in_(bot_ids)))
+            await session.execute(delete(ToolConnection).where(ToolConnection.bot_id.in_(bot_ids)))
+        await session.execute(delete(Bot).where(Bot.workspace_id == workspace_id))
+        await session.execute(delete(Order).where(Order.workspace_id == workspace_id))
+        await session.execute(delete(Membership).where(Membership.workspace_id == workspace_id))
+        await session.delete(workspace)
+
+        if member_user_ids:
+            remaining = select(Membership.user_id).distinct()
+            await session.execute(
+                delete(User).where(
+                    User.id.in_(member_user_ids), User.id.notin_(remaining), User.is_super_admin.is_(False)
+                )
+            )
+
+        await session.commit()
+        return {"deleted": True}
 
 
 class ContactRequest(BaseModel):
