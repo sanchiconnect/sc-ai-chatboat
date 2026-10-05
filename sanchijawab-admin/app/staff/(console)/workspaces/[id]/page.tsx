@@ -289,6 +289,12 @@ function ManageAccountModal({
   }
 
   async function toggleActive() {
+    if (accountActive && member.role === "owner") {
+      const ok = window.confirm(
+        "This person owns this workspace — deactivating them locks everyone in it out of any owner-only actions, with no one else able to take over. Deactivate anyway?",
+      );
+      if (!ok) return;
+    }
     setBusy(true);
     setNotice(null);
     try {
@@ -381,8 +387,8 @@ function ManageAccountModal({
           </div>
           <button
             onClick={toggleActive}
-            disabled={busy || member.role === "owner" && accountActive}
-            title={member.role === "owner" && accountActive ? "Deactivating a workspace owner isn't supported from here yet" : undefined}
+            disabled={busy}
+            title={member.role === "owner" && accountActive ? "This person owns the workspace — you'll be asked to confirm" : undefined}
             className={`shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-semibold disabled:opacity-50 ${
               accountActive ? "text-danger border border-border hover:bg-[var(--danger-soft)]" : "bg-accent text-white"
             }`}
