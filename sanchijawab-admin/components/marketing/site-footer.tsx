@@ -49,7 +49,12 @@ export function SiteFooter() {
       <div className="border-t border-border">
         <div className="container flex flex-col items-center justify-between gap-3 py-6 text-[13px] text-fg-faint sm:flex-row">
           <p>© {new Date().getFullYear()} Sanchiconnect Technologies. All rights reserved.</p>
-          <p>Built in India, answering the world.</p>
+          <p>
+            Built in India, answering the world.{" "}
+            <Link href="/staff/login" className="text-fg-faint hover:text-fg-muted">
+              Staff
+            </Link>
+          </p>
         </div>
       </div>
     </footer>
