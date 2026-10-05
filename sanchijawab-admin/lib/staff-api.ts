@@ -68,6 +68,7 @@ export interface StaffWorkspaceMember {
   email: string;
   role: string;
   active: boolean;
+  account_active: boolean;
 }
 
 export interface StaffWorkspaceDetail {
@@ -115,4 +116,22 @@ export const staffApi = {
 
   removeMember: (workspaceId: string, userId: string) =>
     request<{ removed: boolean }>(`/v1/staff/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
+
+  updateUserEmail: (userId: string, email: string) =>
+    request<{ user_id: string; email: string }>(`/v1/staff/users/${userId}/email`, {
+      method: "PATCH",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetUserPassword: (userId: string, newPassword: string) =>
+    request<{ user_id: string; email_sent: boolean }>(`/v1/staff/users/${userId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: newPassword }),
+    }),
+
+  deactivateUser: (userId: string) =>
+    request<{ user_id: string; is_active: boolean }>(`/v1/staff/users/${userId}/deactivate`, { method: "POST" }),
+
+  reactivateUser: (userId: string) =>
+    request<{ user_id: string; is_active: boolean }>(`/v1/staff/users/${userId}/reactivate`, { method: "POST" }),
 };
