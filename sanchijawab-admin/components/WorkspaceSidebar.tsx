@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { setStoredWorkspaceId } from "@/lib/workspace-store";
 
 const NAV = [
   {
@@ -36,16 +37,54 @@ const NAV = [
   },
 ];
 
-export function WorkspaceSidebar({ workspaceName, active }: { workspaceName: string; active: string }) {
+interface WorkspaceOption {
+  workspace_id: string;
+  name: string;
+}
+
+export function WorkspaceSidebar({
+  workspaceName,
+  active,
+  workspaces,
+  currentWorkspaceId,
+}: {
+  workspaceName: string;
+  active: string;
+  workspaces?: WorkspaceOption[];
+  currentWorkspaceId?: string;
+}) {
+  const hasMultiple = (workspaces?.length ?? 0) > 1;
+
+  function switchWorkspace(id: string) {
+    setStoredWorkspaceId(id);
+    window.location.reload();
+  }
+
   return (
     <aside className="bg-surface border border-border rounded-2xl p-4 md:sticky md:top-5">
       <div className="flex items-center gap-2.5 pb-4 mb-2 border-b border-border">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-accent-ink text-white flex items-center justify-center font-display font-semibold flex-none">
           S
         </div>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold truncate">{workspaceName}</div>
-          <div className="text-[11.5px] text-fg-faint">SanchiJawab workspace</div>
+        <div className="min-w-0 flex-1">
+          {hasMultiple ? (
+            <select
+              value={currentWorkspaceId}
+              onChange={(e) => switchWorkspace(e.target.value)}
+              className="w-full truncate border-none bg-transparent text-sm font-semibold p-0 focus:outline-none focus:ring-0"
+            >
+              {workspaces!.map((w) => (
+                <option key={w.workspace_id} value={w.workspace_id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="text-sm font-semibold truncate">{workspaceName}</div>
+          )}
+          <div className="text-[11.5px] text-fg-faint">
+            {hasMultiple ? `${workspaces!.length} workspaces — click to switch` : "SanchiJawab workspace"}
+          </div>
         </div>
       </div>
       <div className="text-[11px] uppercase tracking-wide font-semibold text-fg-faint px-2.5 pt-1 pb-1.5">
