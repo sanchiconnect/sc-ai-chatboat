@@ -75,7 +75,16 @@ export default function StaffWorkspaceDetailPage() {
     }
   }
 
-  if (!ws) return null;
+  if (!ws) {
+    return (
+      <div className="flex flex-col gap-3.5 animate-pulse">
+        <div className="h-4 w-28 rounded bg-surface-2" />
+        <div className="h-20 rounded-2xl bg-surface-2" />
+        <div className="h-40 rounded-2xl bg-surface-2" />
+        <div className="h-40 rounded-2xl bg-surface-2" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3.5">

@@ -63,12 +63,22 @@ export default function StaffWorkspacesPage() {
               </tr>
             </thead>
             <tbody>
+              {loading &&
+                [0, 1, 2].map((i) => (
+                  <tr key={i} className="border-t border-border animate-pulse">
+                    {Array.from({ length: 6 }).map((_, c) => (
+                      <td key={c} className="p-2.5">
+                        <div className="h-4 rounded bg-surface-2" style={{ width: c === 0 ? "70%" : c === 5 ? "50px" : "90%" }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
               {!loading && workspaces.length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-4 text-sm text-fg-muted">No workspaces match.</td>
                 </tr>
               )}
-              {workspaces.map((ws) => (
+              {!loading && workspaces.map((ws) => (
                 <tr key={ws.id} className="border-t border-border">
                   <td className="p-2.5 font-medium">{ws.name}</td>
                   <td className="p-2.5 text-fg-muted">{ws.owner_email}</td>
@@ -101,7 +111,13 @@ function StatTile({ label, value, note }: { label: string; value: string | numbe
   return (
     <div className="bg-surface border border-border rounded-2xl shadow-card px-[18px] py-4 flex flex-col gap-1.5">
       <div className="text-[12px] font-semibold text-fg-muted">{label}</div>
-      <div className="font-display text-[27px] font-semibold leading-none tabular">{value ?? "—"}</div>
+      {value === undefined ? (
+        <div className="h-[27px] flex items-center">
+          <div className="h-4 w-14 rounded bg-surface-2 animate-pulse" />
+        </div>
+      ) : (
+        <div className="font-display text-[27px] font-semibold leading-none tabular">{value}</div>
+      )}
       {note && <div className="text-[11px] text-fg-faint">{note}</div>}
     </div>
   );
