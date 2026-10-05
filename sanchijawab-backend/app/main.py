@@ -484,14 +484,15 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         ).scalars().all()
 
         # No DB-level ON DELETE CASCADE on these FKs, so children go first,
-        # deepest first, or Postgres rejects the final bot delete.
-        if source_ids:
-            await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
-            await session.execute(delete(Document).where(Document.source_id.in_(source_ids)))
+        # deepest first, or Postgres rejects the final bot delete. Chunk has
+        # a FK to Document, so it must be deleted before Document is.
         if conversation_ids:
             await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
             await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
         await session.execute(delete(Chunk).where(Chunk.bot_id == bot_id))
+        if source_ids:
+            await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
+            await session.execute(delete(Document).where(Document.source_id.in_(source_ids)))
         await session.execute(delete(Source).where(Source.bot_id == bot_id))
         await session.execute(delete(Conversation).where(Conversation.bot_id == bot_id))
         await session.execute(delete(QAPair).where(QAPair.bot_id == bot_id))
