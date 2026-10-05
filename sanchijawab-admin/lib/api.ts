@@ -147,6 +147,11 @@ export const api = {
       crm_webhook_url: string;
     }>(`/v1/bots/${botId}`),
 
+  installCheck: (botId: string) =>
+    request<{ installed: boolean; last_seen_at: string | null; last_seen_host: string | null }>(
+      `/v1/bots/${botId}/install-check`,
+    ),
+
   updateBot: (
     botId: string,
     body: Partial<{
