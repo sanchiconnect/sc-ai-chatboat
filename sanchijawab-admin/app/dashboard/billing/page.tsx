@@ -496,21 +496,21 @@ export default function BillingPage() {
                     value={customerForm.customer_address}
                     onChange={(e) => setCustomerForm({ ...customerForm, customer_address: e.target.value })}
                   />
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <input
-                      className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      className="min-w-[110px] flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                       placeholder="City"
                       value={customerForm.customer_city}
                       onChange={(e) => setCustomerForm({ ...customerForm, customer_city: e.target.value })}
                     />
                     <input
-                      className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      className="min-w-[110px] flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                       placeholder="State"
                       value={customerForm.customer_state}
                       onChange={(e) => setCustomerForm({ ...customerForm, customer_state: e.target.value })}
                     />
                     <input
-                      className="w-28 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                      className="w-full sm:w-32 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                       placeholder="Pincode"
                       inputMode="numeric"
                       pattern="[0-9]{6}"
@@ -786,21 +786,21 @@ export default function BillingPage() {
                 value={profile.supplier_address}
                 onChange={(e) => setProfile({ ...profile, supplier_address: e.target.value })}
               />
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <input
-                  className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                  className="min-w-[110px] flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                   placeholder="City"
                   value={profile.supplier_city}
                   onChange={(e) => setProfile({ ...profile, supplier_city: e.target.value })}
                 />
                 <input
-                  className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                  className="min-w-[110px] flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                   placeholder="State"
                   value={profile.supplier_state}
                   onChange={(e) => setProfile({ ...profile, supplier_state: e.target.value })}
                 />
                 <input
-                  className="w-28 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+                  className="w-full sm:w-32 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
                   placeholder="Pincode"
                   inputMode="numeric"
                   pattern="[0-9]{6}"
