@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { staffApi, StaffWorkspaceDetail, StaffWorkspaceBot } from "@/lib/staff-api";
+import { staffApi, StaffWorkspaceDetail, StaffWorkspaceBot, StaffWorkspaceMember, StaffApiError } from "@/lib/staff-api";
 
 const STATUS_LABEL: Record<StaffWorkspaceBot["status"], string> = {
   live: "Live",
@@ -25,6 +25,7 @@ export default function StaffWorkspaceDetailPage() {
   const [savingBotId, setSavingBotId] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [memberNotice, setMemberNotice] = useState<string | null>(null);
+  const [managingMember, setManagingMember] = useState<StaffWorkspaceMember | null>(null);
 
   function load() {
     staffApi.getWorkspace(params.id).then(setWs);
@@ -134,6 +135,7 @@ export default function StaffWorkspaceDetailPage() {
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Email</th>
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Role</th>
               <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Status</th>
+              <th className="p-2 text-[11px] uppercase tracking-wide text-fg-faint font-semibold">Account</th>
               <th className="p-2" />
             </tr>
           </thead>
@@ -169,18 +171,34 @@ export default function StaffWorkspaceDetailPage() {
                       {m.active ? "Active" : "Pending"}
                     </span>
                   </td>
+                  <td className="p-2">
+                    <span
+                      className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                        m.account_active ? "bg-surface-2 text-fg-faint" : "bg-[var(--danger-soft)] text-danger"
+                      }`}
+                    >
+                      {m.account_active ? "Enabled" : "Deactivated"}
+                    </span>
+                  </td>
                   <td className="p-2 text-right whitespace-nowrap">
-                    {m.role !== "owner" && (
-                      <div className="flex gap-3 justify-end">
-                        {!m.active && (
-                          <button
-                            onClick={() => resendInvite(m.user_id)}
-                            disabled={busy}
-                            className="text-[12px] font-semibold text-accent-ink hover:underline disabled:opacity-50"
-                          >
-                            Resend
-                          </button>
-                        )}
+                    <div className="flex gap-3 justify-end">
+                      {m.role !== "owner" && !m.active && (
+                        <button
+                          onClick={() => resendInvite(m.user_id)}
+                          disabled={busy}
+                          className="text-[12px] font-semibold text-accent-ink hover:underline disabled:opacity-50"
+                        >
+                          Resend
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setManagingMember(m)}
+                        disabled={busy}
+                        className="text-[12px] font-semibold text-fg-muted hover:text-fg disabled:opacity-50"
+                      >
+                        Manage
+                      </button>
+                      {m.role !== "owner" && (
                         <button
                           onClick={() => removeMember(m.user_id)}
                           disabled={busy}
@@ -188,8 +206,8 @@ export default function StaffWorkspaceDetailPage() {
                         >
                           Remove
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -199,10 +217,179 @@ export default function StaffWorkspaceDetailPage() {
       </div>
 
       <p className="text-[12px] text-fg-faint px-1">
-        Support access only — staff can manage membership (role, removal, resending an invite) to help
-        with an account issue, but never see conversation transcripts or bot content without the
-        owner&apos;s permission.
+        Support access only — staff can manage membership and accounts (role, removal, email, password,
+        deactivation) to help with an account issue, but never see conversation transcripts or bot
+        content without the owner&apos;s permission.
       </p>
+
+      {managingMember && (
+        <ManageAccountModal member={managingMember} onClose={() => setManagingMember(null)} onChanged={load} />
+      )}
+    </div>
+  );
+}
+
+function ManageAccountModal({
+  member,
+  onClose,
+  onChanged,
+}: {
+  member: StaffWorkspaceMember;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [email, setEmail] = useState(member.email);
+  const [newPassword, setNewPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [accountActive, setAccountActive] = useState(member.account_active);
+
+  async function saveEmail() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await staffApi.updateUserEmail(member.user_id, email);
+      setNotice({ kind: "success", text: "Email updated." });
+      onChanged();
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof StaffApiError ? err.message : "Failed to update email" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (newPassword.length < 8) {
+      setNotice({ kind: "error", text: "New password must be at least 8 characters" });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await staffApi.resetUserPassword(member.user_id, newPassword);
+      setNotice({
+        kind: "success",
+        text: res.email_sent ? "Password reset — the user was emailed." : "Password reset (no email sent — SMTP not configured).",
+      });
+      setNewPassword("");
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof StaffApiError ? err.message : "Failed to reset password" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleActive() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      if (accountActive) {
+        await staffApi.deactivateUser(member.user_id);
+        setAccountActive(false);
+        setNotice({ kind: "success", text: "Account deactivated — this user can no longer log in." });
+      } else {
+        await staffApi.reactivateUser(member.user_id);
+        setAccountActive(true);
+        setNotice({ kind: "success", text: "Account reactivated." });
+      }
+      onChanged();
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof StaffApiError ? err.message : "Failed to update account status" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && onClose()}>
+      <div
+        className="bg-surface border border-border rounded-2xl shadow-card p-5 w-full max-w-md space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div>
+          <h3 className="font-display text-[16px] font-semibold">Manage account</h3>
+          <p className="text-[12.5px] text-fg-muted mt-0.5">{member.email}</p>
+        </div>
+
+        {notice && (
+          <div
+            className={`text-[12.5px] rounded-lg p-2.5 ${
+              notice.kind === "success" ? "text-success bg-[var(--success-soft)]" : "text-danger bg-[var(--danger-soft)]"
+            }`}
+          >
+            {notice.text}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label className="text-[12px] font-semibold text-fg-muted">Email address</label>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              disabled={busy}
+              onChange={(e) => setEmail(e.target.value)}
+              className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px] disabled:opacity-50"
+            />
+            <button
+              onClick={saveEmail}
+              disabled={busy || email === member.email}
+              className="shrink-0 bg-accent text-white rounded-lg px-3 py-2 text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[12px] font-semibold text-fg-muted">Reset password</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="New password (min 8 characters)"
+              value={newPassword}
+              disabled={busy}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px] disabled:opacity-50"
+            />
+            <button
+              onClick={resetPassword}
+              disabled={busy || !newPassword}
+              className="shrink-0 bg-accent text-white rounded-lg px-3 py-2 text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              Reset
+            </button>
+          </div>
+          <p className="text-[11px] text-fg-faint">The user is emailed a notice that support reset their password.</p>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div>
+            <p className="text-[13px] font-medium text-fg">{accountActive ? "Account enabled" : "Account deactivated"}</p>
+            <p className="text-[11.5px] text-fg-faint">
+              {accountActive ? "This user can log in normally." : "This user can't log in anywhere until reactivated."}
+            </p>
+          </div>
+          <button
+            onClick={toggleActive}
+            disabled={busy || member.role === "owner" && accountActive}
+            title={member.role === "owner" && accountActive ? "Deactivating a workspace owner isn't supported from here yet" : undefined}
+            className={`shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-semibold disabled:opacity-50 ${
+              accountActive ? "text-danger border border-border hover:bg-[var(--danger-soft)]" : "bg-accent text-white"
+            }`}
+          >
+            {accountActive ? "Deactivate" : "Reactivate"}
+          </button>
+        </div>
+
+        <button
+          onClick={onClose}
+          disabled={busy}
+          className="w-full text-center text-[12.5px] font-semibold text-fg-muted hover:text-fg pt-1"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
