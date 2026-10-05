@@ -80,7 +80,14 @@ export default function StaffWorkspacesPage() {
               )}
               {!loading && workspaces.map((ws) => (
                 <tr key={ws.id} className="border-t border-border">
-                  <td className="p-2.5 font-medium">{ws.name}</td>
+                  <td className="p-2.5 font-medium">
+                    {ws.name}
+                    {!ws.is_active && (
+                      <span className="ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[var(--danger-soft)] text-danger">
+                        Deactivated
+                      </span>
+                    )}
+                  </td>
                   <td className="p-2.5 text-fg-muted">{ws.owner_email}</td>
                   <td className="p-2.5 tabular">{ws.bot_count}</td>
                   <td className="p-2.5">

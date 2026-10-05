@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { staffApi, StaffWorkspaceDetail, StaffWorkspaceBot, StaffWorkspaceMember, StaffApiError } from "@/lib/staff-api";
 
@@ -21,11 +21,14 @@ const STATUS_PILL: Record<StaffWorkspaceBot["status"], string> = {
 
 export default function StaffWorkspaceDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [ws, setWs] = useState<StaffWorkspaceDetail | null>(null);
   const [savingBotId, setSavingBotId] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [memberNotice, setMemberNotice] = useState<string | null>(null);
   const [managingMember, setManagingMember] = useState<StaffWorkspaceMember | null>(null);
+  const [wsBusy, setWsBusy] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   function load() {
     staffApi.getWorkspace(params.id).then(setWs);
@@ -75,6 +78,35 @@ export default function StaffWorkspaceDetailPage() {
     }
   }
 
+  async function toggleWorkspaceActive() {
+    if (!ws) return;
+    if (ws.is_active) {
+      const ok = window.confirm(
+        `Deactivate "${ws.name}"? Every member loses dashboard access to it and its bots stop answering publicly, until you reactivate it. Nothing is deleted.`,
+      );
+      if (!ok) return;
+    }
+    setWsBusy(true);
+    try {
+      if (ws.is_active) await staffApi.deactivateWorkspace(ws.id);
+      else await staffApi.reactivateWorkspace(ws.id);
+      load();
+    } finally {
+      setWsBusy(false);
+    }
+  }
+
+  async function confirmDeleteWorkspace() {
+    if (!ws) return;
+    setWsBusy(true);
+    try {
+      await staffApi.deleteWorkspace(ws.id);
+      router.push("/staff");
+    } finally {
+      setWsBusy(false);
+    }
+  }
+
   if (!ws) {
     return (
       <div className="flex flex-col gap-3.5 animate-pulse">
@@ -94,13 +126,47 @@ export default function StaffWorkspaceDetailPage() {
 
       <div className="bg-surface border border-border rounded-2xl shadow-card p-5 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <div className="text-[15px] font-semibold">{ws.name}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-[15px] font-semibold">{ws.name}</span>
+            {!ws.is_active && (
+              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[var(--danger-soft)] text-danger">
+                Deactivated
+              </span>
+            )}
+          </div>
           <div className="text-[12.5px] text-fg-muted">{ws.owner_email}</div>
         </div>
-        <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-surface-2 border border-border text-fg-muted">
-          {ws.plan}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-surface-2 border border-border text-fg-muted">
+            {ws.plan}
+          </span>
+          <button
+            onClick={toggleWorkspaceActive}
+            disabled={wsBusy}
+            className={`text-[12.5px] font-semibold rounded-lg px-3 py-1.5 border border-border disabled:opacity-50 ${
+              ws.is_active ? "text-danger hover:bg-[var(--danger-soft)]" : "bg-accent text-white border-transparent"
+            }`}
+          >
+            {ws.is_active ? "Deactivate" : "Reactivate"}
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={wsBusy}
+            className="text-[12.5px] font-semibold rounded-lg px-3 py-1.5 border border-danger text-danger hover:bg-[var(--danger-soft)] disabled:opacity-50"
+          >
+            Delete
+          </button>
+        </div>
       </div>
+
+      {showDeleteConfirm && (
+        <DeleteWorkspaceConfirm
+          workspaceName={ws.name}
+          busy={wsBusy}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={confirmDeleteWorkspace}
+        />
+      )}
 
       <div className="bg-surface border border-border rounded-2xl shadow-card p-5">
         <div className="text-[15px] font-semibold mb-3">Bots ({ws.bots.length})</div>
@@ -404,6 +470,64 @@ function ManageAccountModal({
         >
           Close
         </button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteWorkspaceConfirm({
+  workspaceName,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  workspaceName: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const matches = typed === workspaceName;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && onCancel()}>
+      <div
+        className="bg-surface border border-danger rounded-2xl shadow-card p-5 w-full max-w-md space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-display text-[16px] font-semibold text-danger">Delete workspace permanently</h3>
+        <p className="text-[13px] text-fg-muted leading-relaxed">
+          This removes <strong>{workspaceName}</strong> and everything in it — every bot, conversation, lead,
+          and knowledge source — for good. There is no undo. Anyone whose only workspace this is will also lose
+          their account.
+        </p>
+        <div>
+          <label className="text-[12px] font-semibold text-fg-muted">
+            Type <span className="font-mono text-fg">{workspaceName}</span> to confirm
+          </label>
+          <input
+            value={typed}
+            disabled={busy}
+            onChange={(e) => setTyped(e.target.value)}
+            className="mt-1 w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px] disabled:opacity-50"
+          />
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onConfirm}
+            disabled={busy || !matches}
+            className="flex-1 bg-danger text-white rounded-lg py-2 text-[13px] font-semibold disabled:opacity-50"
+          >
+            {busy ? "Deleting…" : "Delete permanently"}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 border border-border rounded-lg py-2 text-[13px] font-semibold text-fg-muted hover:bg-surface-2 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
