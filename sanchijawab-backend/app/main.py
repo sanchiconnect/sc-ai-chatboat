@@ -7,6 +7,7 @@ could previously claim to be any tenant by passing tenant_id in the body.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from collections import Counter
@@ -50,8 +51,10 @@ from .services.auth import (
     hash_password,
     verify_password,
 )
+from .services.chunker import chunk_text
 from .services.conversations import add_message, get_or_create_conversation, list_messages
 from .services.email import send_email, send_invite_email, send_verification_email
+from .services.embeddings import embed_texts
 from .services.parser import DOCLING_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, TABULAR_EXTENSIONS, extension_of
 from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, get_gateway_credentials, upsert_gateway
@@ -614,14 +617,32 @@ async def list_bots(workspace_id: str, user: CurrentUser = Depends(get_current_u
 # ─── Knowledge sources ────────────────────────────────────────────────────
 
 
+SOURCE_MODES = {"single_page", "sitemap", "whole_domain"}
+
+
 class CreateSourceRequest(BaseModel):
     bot_id: str
     url: str
     visibility: str = "customer"
+    mode: str = "whole_domain"
+    include_patterns: str = ""
+    exclude_patterns: str = ""
+    max_pages: int = 40  # same hard crawl cap as before (SAN-1082); raise per-source if a site genuinely needs more
+    ownership_confirmed: bool = False  # SAN-1083/FR-K4 — must be explicitly true; we crawl on the customer's behalf, not public scraping
+    rescan_interval_days: int = 7  # SAN-1088/FR-K10 — how often this source re-crawls itself automatically
 
 
 @app.post("/v1/sources")
 async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(get_current_user)):
+    if body.mode not in SOURCE_MODES:
+        raise HTTPException(422, f"mode must be one of {sorted(SOURCE_MODES)}")
+    if not 1 <= body.max_pages <= 500:
+        raise HTTPException(422, "max_pages must be between 1 and 500")
+    if not body.ownership_confirmed:
+        raise HTTPException(422, "You must confirm you own this site or have permission to crawl it")
+    if not 5 <= body.rescan_interval_days <= 365:
+        raise HTTPException(422, "rescan_interval_days must be between 5 and 365")
+
     async with SessionLocal() as session:
         bot = await session.get(Bot, body.bot_id)
         if bot is None:
@@ -631,6 +652,11 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
         source = Source(
             tenant_id=bot.tenant_id, bot_id=body.bot_id, type="website",
             url=body.url, visibility=body.visibility, status="pending",
+            ownership_confirmed=body.ownership_confirmed,
+            mode=body.mode, include_patterns=body.include_patterns,
+            exclude_patterns=body.exclude_patterns, max_pages=body.max_pages,
+            rescan_interval_days=body.rescan_interval_days,
+            next_scan_at=datetime.utcnow() + timedelta(days=body.rescan_interval_days),
         )
         session.add(source)
         await session.flush()
@@ -689,7 +715,10 @@ async def source_status(job_id: int, user: CurrentUser = Depends(get_current_use
         job = await session.get(IngestJob, job_id)
         if job is None or job.tenant_id != user.tenant_id:
             raise HTTPException(404, "Not found")
-        return {"job_id": job.id, "status": job.status, "error": job.error}
+        return {
+            "job_id": job.id, "status": job.status, "error": job.error,
+            "pages_done": job.pages_done, "pages_total": job.pages_total,
+        }
 
 
 @app.get("/v1/bots/{bot_id}/sources")
@@ -712,8 +741,220 @@ async def list_sources(bot_id: str, user: CurrentUser = Depends(get_current_user
             result.append({
                 "source_id": s.id, "url": display, "type": s.type, "visibility": s.visibility,
                 "job_status": job.status if job else None, "job_error": job.error if job else None,
+                "pages_done": job.pages_done if job else None, "pages_total": job.pages_total if job else None,
+                "rescan_interval_days": s.rescan_interval_days,
+                "next_scan_at": s.next_scan_at.isoformat() if s.next_scan_at else None,
             })
         return result
+
+
+@app.post("/v1/sources/{source_id}/rescan")
+async def rescan_source(source_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Manually re-trigger a crawl for an already-created website source
+    (SAN-1087, FR-K9) — goes through the same queue/worker path as the
+    initial crawl (worker.py polls every 2s), so a small source clears
+    comfortably within the feature's 2-minute re-index target."""
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(404, "Source not found")
+        if source.type != "website":
+            raise HTTPException(400, "Only website sources can be re-scanned")
+        bot = await session.get(Bot, source.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        in_flight = (
+            await session.execute(
+                select(IngestJob.id).where(IngestJob.source_id == source_id, IngestJob.status.in_(["queued", "running"]))
+            )
+        ).first()
+        if in_flight:
+            raise HTTPException(409, "A crawl is already in progress for this source")
+
+        source.status = "pending"
+        # Re-scanning now means the schedule restarts from now too, not from
+        # whenever the last automatic run happened to land (SAN-1088).
+        source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
+        job = IngestJob(tenant_id=source.tenant_id, source_id=source.id, status="queued")
+        session.add(job)
+        await session.commit()
+        return {"source_id": source.id, "job_id": job.id, "status": "queued"}
+
+
+@app.post("/v1/sources/{source_id}/stop")
+async def stop_source(source_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Stops an in-progress crawl (SAN-1088, FR-K10) — sets a flag the
+    worker checks between page fetches (see CrawlCancelled in ingest.py);
+    the request returns immediately, the crawl itself winds down on its
+    own next checkpoint rather than being killed mid-request."""
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(404, "Source not found")
+        bot = await session.get(Bot, source.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        job = (
+            await session.execute(
+                select(IngestJob)
+                .where(IngestJob.source_id == source_id, IngestJob.status.in_(["queued", "running"]))
+                .order_by(IngestJob.id.desc())
+            )
+        ).scalars().first()
+        if job is None:
+            raise HTTPException(400, "No crawl is currently in progress for this source")
+
+        job.cancel_requested = True
+        await session.commit()
+        return {"job_id": job.id, "status": job.status}
+
+
+class UpdateSourceRequest(BaseModel):
+    rescan_interval_days: int
+
+
+@app.patch("/v1/sources/{source_id}")
+async def update_source(source_id: str, body: UpdateSourceRequest, user: CurrentUser = Depends(get_current_user)):
+    if not 5 <= body.rescan_interval_days <= 365:
+        raise HTTPException(422, "rescan_interval_days must be between 5 and 365")
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(404, "Source not found")
+        bot = await session.get(Bot, source.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        source.rescan_interval_days = body.rescan_interval_days
+        source.next_scan_at = datetime.utcnow() + timedelta(days=body.rescan_interval_days)
+        await session.commit()
+        return {"source_id": source.id, "rescan_interval_days": source.rescan_interval_days}
+
+
+async def _get_document_for_user(session, document_id: str, user: CurrentUser, min_role: str) -> tuple[Document, Source]:
+    doc = await session.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(404, "Page not found")
+    source = await session.get(Source, doc.source_id)
+    bot = await session.get(Bot, source.bot_id)
+    await require_workspace_role(bot.workspace_id, user, min_role=min_role)
+    return doc, source
+
+
+@app.get("/v1/sources/{source_id}/documents")
+async def list_documents(source_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(404, "Source not found")
+        bot = await session.get(Bot, source.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+
+        docs = (await session.execute(select(Document).where(Document.source_id == source_id))).scalars().all()
+        return [
+            {
+                "document_id": d.id, "url": d.url, "title": d.title, "status": d.status,
+                "disabled": d.disabled, "error": d.error,
+                "last_crawled_at": d.last_crawled_at.isoformat() if d.last_crawled_at else None,
+            }
+            for d in docs
+        ]
+
+
+@app.get("/v1/documents/{document_id}")
+async def get_document(document_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        doc, _ = await _get_document_for_user(session, document_id, user, min_role="viewer")
+        return {
+            "document_id": doc.id, "url": doc.url, "title": doc.title, "status": doc.status,
+            "disabled": doc.disabled, "content": doc.raw_text,
+        }
+
+
+class EditDocumentRequest(BaseModel):
+    content: str
+
+
+@app.patch("/v1/documents/{document_id}")
+async def edit_document(document_id: str, body: EditDocumentRequest, user: CurrentUser = Depends(get_current_user)):
+    """Overrides a page's indexed content directly (SAN-1087, FR-K9) —
+    re-chunks/re-embeds synchronously in-request rather than going through
+    the crawl queue, since this is one page's worth of work; comfortably
+    inside the feature's 2-minute re-index target."""
+    async with SessionLocal() as session:
+        doc, source = await _get_document_for_user(session, document_id, user, min_role="admin")
+
+        await session.execute(delete(Chunk).where(Chunk.document_id == doc.id))
+        stats = {"pages": 0, "chunks": 0, "skipped": 0}
+        pieces = chunk_text(body.content)
+        content_hash = hashlib.sha256("\n\n".join(pieces).encode("utf-8")).hexdigest()
+        doc.raw_text = body.content
+        doc.content_hash = content_hash
+        doc.disabled = False
+        doc.status = "indexed"
+        doc.error = None
+
+        if not pieces:
+            doc.status = "failed"
+            doc.error = "no extractable content"
+        else:
+            vectors = embed_texts(pieces)
+            for text, vector in zip(pieces, vectors):
+                session.add(Chunk(
+                    tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
+                    visibility=source.visibility, text=text, embedding=vector,
+                ))
+                stats["chunks"] += 1
+            stats["pages"] += 1
+
+        await session.commit()
+        return {"document_id": doc.id, "status": doc.status, "stats": stats}
+
+
+async def _set_document_disabled(document_id: str, user: CurrentUser, disabled: bool) -> dict:
+    async with SessionLocal() as session:
+        doc, source = await _get_document_for_user(document_id=document_id, session=session, user=user, min_role="admin")
+        doc.disabled = disabled
+        await session.execute(delete(Chunk).where(Chunk.document_id == doc.id))
+
+        if not disabled and doc.raw_text:
+            pieces = chunk_text(doc.raw_text)
+            if pieces:
+                vectors = embed_texts(pieces)
+                for text, vector in zip(pieces, vectors):
+                    session.add(Chunk(
+                        tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
+                        visibility=source.visibility, text=text, embedding=vector,
+                    ))
+            doc.status = "indexed"
+        elif disabled:
+            doc.status = "disabled"
+
+        await session.commit()
+        return {"document_id": doc.id, "disabled": doc.disabled, "status": doc.status}
+
+
+@app.post("/v1/documents/{document_id}/disable")
+async def disable_document(document_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Removes one page from retrieval without deleting it (SAN-1087,
+    FR-K9) — deletes its chunks (so the hybrid retrieval query just finds
+    nothing for it, no query-side filtering needed) but keeps raw_text so
+    re-enabling is a re-chunk/re-embed, not a full re-crawl."""
+    return await _set_document_disabled(document_id, user, disabled=True)
+
+
+@app.post("/v1/documents/{document_id}/enable")
+async def enable_document(document_id: str, user: CurrentUser = Depends(get_current_user)):
+    return await _set_document_disabled(document_id, user, disabled=False)
+
+
+@app.delete("/v1/documents/{document_id}")
+async def delete_document(document_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        doc, _ = await _get_document_for_user(session, document_id, user, min_role="admin")
+        await session.execute(delete(Chunk).where(Chunk.document_id == doc.id))
+        await session.delete(doc)
+        await session.commit()
+        return {"deleted": True}
 
 
 @app.delete("/v1/sources/{source_id}")

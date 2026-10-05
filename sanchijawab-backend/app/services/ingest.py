@@ -10,11 +10,12 @@ these files are new.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Chunk, Document, Source
+from ..models import Chunk, Document, IngestJob, Source
 from . import storage
 from .chunker import chunk_text
 from .crawler import crawl_site
@@ -29,9 +30,23 @@ async def store_document(
     """Shared embed -> store step for website pages and files. `pieces` are
     already-chunked text (word-count windows for prose, one row per chunk
     for spreadsheets — chunking strategy is decided by the caller)."""
-    content_hash = hashlib.sha256("\n\n".join(pieces).encode("utf-8")).hexdigest()
+    joined = "\n\n".join(pieces)
+    content_hash = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+    if doc and doc.disabled:
+        # User explicitly took this page out of retrieval (SAN-1087, FR-K9)
+        # — a re-crawl finding new content shouldn't silently override that.
+        # Still refresh raw_text/hash so "view" shows the latest crawled
+        # text and re-enabling later re-chunks from current content, not
+        # stale content from before the disable.
+        doc.content_hash = content_hash
+        doc.raw_text = joined
+        doc.last_crawled_at = datetime.utcnow()
+        stats["skipped"] += 1
+        return
 
     if doc and doc.content_hash == content_hash:
+        doc.last_crawled_at = datetime.utcnow()
         stats["skipped"] += 1
         return  # unchanged since last ingest — don't re-embed
 
@@ -43,7 +58,9 @@ async def store_document(
         await session.execute(delete(Chunk).where(Chunk.document_id == doc.id))
 
     doc.content_hash = content_hash
+    doc.raw_text = joined
     doc.status = "indexed"
+    doc.last_crawled_at = datetime.utcnow()
 
     if not pieces:
         doc.status = "failed"
@@ -62,13 +79,45 @@ async def store_document(
     stats["pages"] += 1
 
 
-async def ingest_website_source(session: AsyncSession, source: Source, max_pages: int | None = None) -> dict:
+class CrawlCancelled(Exception):
+    """Raised mid-crawl when a user hits "Stop" (SAN-1088, FR-K10) — distinct
+    from a real failure so the worker can mark the job 'cancelled' instead
+    of 'failed'."""
+
+
+async def ingest_website_source(
+    session: AsyncSession, source: Source, max_pages: int | None = None, job: IngestJob | None = None
+) -> dict:
     # Was silently hardcoded to 6 pages regardless of source.max_pages (DB
     # default 5000) or settings.max_pages_per_site — every crawl, including
     # "whole domain" ones, was actually only ever indexing 6 pages. That's
     # why real sites with more than a handful of pages produced incomplete
     # answers: the rest of the content was never crawled at all.
-    pages = await crawl_site(source.url, max_pages=max_pages or source.max_pages)
+
+    async def on_progress(done: int, total: int | None) -> None:
+        # Live crawl progress (SAN-1087, FR-K8) — committed as it happens
+        # (not batched with the final commit below) so a poller sees real
+        # numbers while the crawl is still running, not just "running".
+        if job is not None:
+            job.pages_done = done
+            job.pages_total = total
+            await session.commit()
+            # cancel_requested is set by a *different* request's session
+            # (the "Stop" endpoint) — expire_on_commit=False means our own
+            # commit above doesn't pick up someone else's write, so refresh
+            # this one column explicitly before checking it.
+            await session.refresh(job, attribute_names=["cancel_requested"])
+            if job.cancel_requested:
+                raise CrawlCancelled(f"Stopped after {done} page(s)")
+
+    pages = await crawl_site(
+        source.url,
+        max_pages=max_pages or source.max_pages,
+        mode=source.mode,
+        include_patterns=source.include_patterns,
+        exclude_patterns=source.exclude_patterns,
+        on_progress=on_progress,
+    )
     stats = {"pages": 0, "chunks": 0, "skipped": 0}
 
     for url, markdown in pages:

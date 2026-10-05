@@ -128,10 +128,11 @@ class Source(Base):
     visibility: Mapped[str] = mapped_column(String(16), default="customer")  # customer | internal
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     file_key: Mapped[str | None] = mapped_column(String(512), nullable=True)  # S3 key
-    mode: Mapped[str] = mapped_column(String(16), default="single_page")
+    mode: Mapped[str] = mapped_column(String(16), default="whole_domain")
     include_patterns: Mapped[str] = mapped_column(Text, default="")
     exclude_patterns: Mapped[str] = mapped_column(Text, default="")
     max_pages: Mapped[int] = mapped_column(Integer, default=5000)
+    ownership_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)  # explicit customer attestation at creation time (SAN-1083, FR-K4) — not technical verification, just an audit trail of consent
     rescan_interval_days: Mapped[int] = mapped_column(Integer, default=7)
     next_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")
@@ -152,6 +153,17 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(16), default="indexed")
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Full page text as chunked/embedded (post-crawl, pre-edit — or the
+    # user's own edit once they've overridden it). Chunks only ever held
+    # fragments, so there was no way to show or edit "the page" as a whole;
+    # this is what the Knowledge page's view/edit UI (SAN-1087, FR-K9) reads
+    # and writes.
+    raw_text: Mapped[str] = mapped_column(Text, default="")
+    # Disabling a document deletes its chunks (so retrieval just finds
+    # nothing for it — no query-side join/filter needed) but keeps the row
+    # and raw_text, so re-enabling just re-chunks/re-embeds instead of
+    # requiring a full re-crawl.
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Chunk(Base):
@@ -402,3 +414,15 @@ class IngestJob(Base):
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Live crawl progress (SAN-1087, FR-K8) — pages_total is an exact count
+    # for sitemap mode (the URL list is known upfront) or the max_pages
+    # ceiling for whole_domain/single_page (the real total isn't knowable
+    # until the crawl stops finding new links), updated as the crawl runs
+    # so the frontend can poll real progress instead of just queued/running.
+    pages_done: Mapped[int] = mapped_column(Integer, default=0)
+    pages_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Checked between page fetches during a crawl (SAN-1088, FR-K10) — set
+    # by the "Stop" action, read by the running job itself; a boolean flag
+    # rather than jumping straight to a cancelled status, since the worker
+    # (not the API request) is what actually stops the in-progress crawl.
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)

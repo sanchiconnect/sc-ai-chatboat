@@ -6,7 +6,9 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from sqlalchemy import text
+from datetime import datetime, timedelta
+
+from sqlalchemy import select, text
 
 from .db import SessionLocal
 
@@ -19,9 +21,10 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 from .models import IngestJob, Source
-from .services.ingest import ingest_file_source, ingest_website_source
+from .services.ingest import CrawlCancelled, ingest_file_source, ingest_website_source
 
 POLL_SECONDS = 2
+SCHEDULE_CHECK_SECONDS = 60  # scheduled re-scans don't need second-level precision
 
 
 async def claim_one_job(session) -> IngestJob | None:
@@ -50,11 +53,23 @@ async def process_job(job: IngestJob) -> None:
             if source.type == "file":
                 stats = await ingest_file_source(session, source)
             else:
-                stats = await ingest_website_source(session, source)
+                stats = await ingest_website_source(session, source, job=job)
             job.status = "done"
             job.error = None
             source.status = "indexed"
+            if source.type == "website":
+                # Scheduled re-scan (SAN-1088, FR-K10) — only pushed forward
+                # on a real completed run, so a stopped or failed crawl gets
+                # retried on the next schedule check instead of silently
+                # going quiet for a full interval.
+                source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
             print(f"job {job.id}: {stats}")
+        except CrawlCancelled as e:
+            job.status = "cancelled"
+            job.error = str(e)[:1024]
+            if source is not None:
+                source.status = "indexed" if source.status == "indexed" else "failed"
+            print(f"job {job.id} cancelled: {e}")
         except Exception as e:
             job.status = "failed"
             job.error = str(e)[:1024]
@@ -64,9 +79,46 @@ async def process_job(job: IngestJob) -> None:
         await session.commit()
 
 
+async def enqueue_due_rescans() -> None:
+    """Scheduled re-scan (SAN-1088, FR-K10) — any website source whose
+    next_scan_at has passed, with no job already in flight for it, gets a
+    fresh queued job. next_scan_at is pushed forward immediately (not only
+    on completion) so a slow scheduler tick can't enqueue the same source
+    twice before the first run finishes."""
+    async with SessionLocal() as session:
+        due = (
+            await session.execute(
+                select(Source).where(
+                    Source.type == "website",
+                    Source.next_scan_at.is_not(None),
+                    Source.next_scan_at <= datetime.utcnow(),
+                )
+            )
+        ).scalars().all()
+        for source in due:
+            in_flight = (
+                await session.execute(
+                    select(IngestJob.id).where(
+                        IngestJob.source_id == source.id, IngestJob.status.in_(["queued", "running"])
+                    )
+                )
+            ).first()
+            if in_flight:
+                continue
+            session.add(IngestJob(tenant_id=source.tenant_id, source_id=source.id, status="queued"))
+            source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
+        if due:
+            await session.commit()
+
+
 async def run_forever() -> None:
     print("Worker started, polling ingest_jobs ...")
+    last_schedule_check = datetime.min
     while True:
+        if (datetime.utcnow() - last_schedule_check).total_seconds() >= SCHEDULE_CHECK_SECONDS:
+            await enqueue_due_rescans()
+            last_schedule_check = datetime.utcnow()
+
         async with SessionLocal() as session:
             job = await claim_one_job(session)
         if job is None:
