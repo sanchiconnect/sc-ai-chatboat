@@ -106,16 +106,16 @@ export default function KnowledgePage() {
         </button>
       </form>
 
-      <div className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3 mb-6">
+      <div className="bg-surface border border-border rounded-lg p-4 flex flex-wrap items-center gap-3 mb-6">
         <input
           ref={fileInputRef}
           type="file"
           accept={ACCEPTED_FILE_TYPES}
           onChange={onFilePicked}
           disabled={uploading}
-          className="flex-1 text-sm"
+          className="min-w-0 max-w-full flex-1 text-sm"
         />
-        <span className="text-xs text-fg-faint whitespace-nowrap">PDF, DOCX, PPTX, TXT, MD, CSV, TSV, XLSX — max 50MB</span>
+        <span className="text-xs text-fg-faint">PDF, DOCX, PPTX, TXT, MD, CSV, TSV, XLSX — max 50MB</span>
         {uploading && <span className="text-sm text-accent-ink">Uploading…</span>}
       </div>
 
