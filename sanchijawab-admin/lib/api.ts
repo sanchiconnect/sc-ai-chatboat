@@ -123,22 +123,108 @@ export const api = {
 
   deleteBot: (botId: string) => request<{ deleted: boolean }>(`/v1/bots/${botId}`, { method: "DELETE" }),
 
-  createSource: (botId: string, url: string, visibility: "customer" | "internal" = "customer") =>
+  createSource: (
+    botId: string,
+    url: string,
+    visibility: "customer" | "internal" = "customer",
+    opts?: {
+      mode?: "single_page" | "sitemap" | "whole_domain";
+      includePatterns?: string;
+      excludePatterns?: string;
+      maxPages?: number;
+      ownershipConfirmed?: boolean;
+      rescanIntervalDays?: number;
+    }
+  ) =>
     request<{ source_id: string; job_id: number; status: string }>("/v1/sources", {
       method: "POST",
-      body: JSON.stringify({ bot_id: botId, url, visibility }),
+      body: JSON.stringify({
+        bot_id: botId,
+        url,
+        visibility,
+        ownership_confirmed: opts?.ownershipConfirmed ?? false,
+        ...(opts?.mode ? { mode: opts.mode } : {}),
+        ...(opts?.includePatterns ? { include_patterns: opts.includePatterns } : {}),
+        ...(opts?.excludePatterns ? { exclude_patterns: opts.excludePatterns } : {}),
+        ...(opts?.maxPages ? { max_pages: opts.maxPages } : {}),
+        ...(opts?.rescanIntervalDays ? { rescan_interval_days: opts.rescanIntervalDays } : {}),
+      }),
     }),
 
+  updateSource: (sourceId: string, rescanIntervalDays: number) =>
+    request<{ source_id: string; rescan_interval_days: number }>(`/v1/sources/${sourceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ rescan_interval_days: rescanIntervalDays }),
+    }),
+
+  stopSource: (sourceId: string) =>
+    request<{ job_id: number; status: string }>(`/v1/sources/${sourceId}/stop`, { method: "POST" }),
+
   sourceStatus: (jobId: number) =>
-    request<{ job_id: number; status: string; error: string | null }>(`/v1/sources/${jobId}/status`),
+    request<{ job_id: number; status: string; error: string | null; pages_done: number; pages_total: number | null }>(
+      `/v1/sources/${jobId}/status`
+    ),
 
   listSources: (botId: string) =>
     request<
-      { source_id: string; url: string; visibility: string; job_status: string | null; job_error: string | null }[]
+      {
+        source_id: string;
+        url: string;
+        type: string;
+        visibility: string;
+        job_status: string | null;
+        job_error: string | null;
+        pages_done: number | null;
+        pages_total: number | null;
+        rescan_interval_days: number;
+        next_scan_at: string | null;
+      }[]
     >(`/v1/bots/${botId}/sources`),
 
   deleteSource: (sourceId: string) =>
     request<{ deleted: boolean }>(`/v1/sources/${sourceId}`, { method: "DELETE" }),
+
+  rescanSource: (sourceId: string) =>
+    request<{ source_id: string; job_id: number; status: string }>(`/v1/sources/${sourceId}/rescan`, {
+      method: "POST",
+    }),
+
+  listDocuments: (sourceId: string) =>
+    request<
+      {
+        document_id: string;
+        url: string;
+        title: string;
+        status: string;
+        disabled: boolean;
+        error: string | null;
+        last_crawled_at: string | null;
+      }[]
+    >(`/v1/sources/${sourceId}/documents`),
+
+  getDocument: (documentId: string) =>
+    request<{ document_id: string; url: string; title: string; status: string; disabled: boolean; content: string }>(
+      `/v1/documents/${documentId}`
+    ),
+
+  editDocument: (documentId: string, content: string) =>
+    request<{ document_id: string; status: string; stats: Record<string, number> }>(`/v1/documents/${documentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+
+  disableDocument: (documentId: string) =>
+    request<{ document_id: string; disabled: boolean; status: string }>(`/v1/documents/${documentId}/disable`, {
+      method: "POST",
+    }),
+
+  enableDocument: (documentId: string) =>
+    request<{ document_id: string; disabled: boolean; status: string }>(`/v1/documents/${documentId}/enable`, {
+      method: "POST",
+    }),
+
+  deleteDocument: (documentId: string) =>
+    request<{ deleted: boolean }>(`/v1/documents/${documentId}`, { method: "DELETE" }),
 
   getBot: (botId: string) =>
     request<{
