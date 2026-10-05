@@ -28,6 +28,13 @@ async def get_current_user(authorization: str = Header(default="")) -> CurrentUs
     payload = decode_token(token, expected_type="access")
     if payload is None:
         raise HTTPException(401, "Invalid or expired token")
+    # Deliberately hits the DB on every request (not just at login) so a
+    # super admin deactivating a user takes effect immediately, instead of
+    # waiting out that user's already-issued token (up to 7 days).
+    async with SessionLocal() as session:
+        db_user = await session.get(User, payload["sub"])
+    if db_user is None or not db_user.is_active:
+        raise HTTPException(401, "This account has been deactivated")
     return CurrentUser(user_id=payload["sub"], tenant_id=payload["tenant_id"])
 
 
@@ -75,6 +82,6 @@ async def get_current_staff_user(authorization: str = Header(default="")) -> Use
         raise HTTPException(401, "Invalid or expired staff token")
     async with SessionLocal() as session:
         db_user = await session.get(User, payload["sub"])
-    if db_user is None or not db_user.is_super_admin:
+    if db_user is None or not db_user.is_active or not db_user.is_super_admin:
         raise HTTPException(403, "Requires super admin")
     return db_user
