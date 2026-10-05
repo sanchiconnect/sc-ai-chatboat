@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
+import { resolveWorkspace } from "@/lib/workspace-store";
 import { ProfileMenu } from "@/components/ProfileMenu";
 
 type Plan = {
@@ -71,6 +72,7 @@ function formFromPlan(p: Plan) {
 export default function BillingPage() {
   const [workspaceName, setWorkspaceName] = useState("…");
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspaces, setWorkspaces] = useState<{ workspace_id: string; name: string }[]>([]);
   const [email, setEmail] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -126,7 +128,8 @@ export default function BillingPage() {
     }).catch(() => {});
     api.listAvailableGateways().then(setAvailableGateways).catch(() => {});
     api.listWorkspaces().then(async (list) => {
-      const ws = list[0];
+      setWorkspaces(list);
+      const ws = resolveWorkspace(list);
       if (!ws) return;
       setWorkspaceName(ws.name);
       setWorkspaceId(ws.workspace_id);
@@ -327,7 +330,12 @@ export default function BillingPage() {
 
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
-      <WorkspaceSidebar workspaceName={workspaceName} active="/dashboard/billing" />
+      <WorkspaceSidebar
+        workspaceName={workspaceName}
+        active="/dashboard/billing"
+        workspaces={workspaces}
+        currentWorkspaceId={workspaceId ?? undefined}
+      />
 
       <main className="min-w-0">
         <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">

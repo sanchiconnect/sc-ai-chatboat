@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { resolveWorkspace } from "@/lib/workspace-store";
 
 export default function ProfilePage() {
   const [workspaceName, setWorkspaceName] = useState("…");
+  const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
+  const [workspaces, setWorkspaces] = useState<{ workspace_id: string; name: string }[]>([]);
   const [email, setEmail] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
@@ -22,7 +25,12 @@ export default function ProfilePage() {
       setIsSuperAdmin(m.is_super_admin);
     }).catch(() => {});
     api.listWorkspaces().then((list) => {
-      if (list[0]) setWorkspaceName(list[0].name);
+      setWorkspaces(list);
+      const ws = resolveWorkspace(list);
+      if (ws) {
+        setWorkspaceName(ws.name);
+        setWorkspaceId(ws.workspace_id);
+      }
     });
   }, []);
 
@@ -45,7 +53,12 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
-      <WorkspaceSidebar workspaceName={workspaceName} active="/dashboard/profile" />
+      <WorkspaceSidebar
+        workspaceName={workspaceName}
+        active="/dashboard/profile"
+        workspaces={workspaces}
+        currentWorkspaceId={workspaceId}
+      />
 
       <main className="min-w-0">
         <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">

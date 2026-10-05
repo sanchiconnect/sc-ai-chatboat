@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { resolveWorkspace } from "@/lib/workspace-store";
 
 type Member = { user_id: string; email: string; role: string; active: boolean };
+type WorkspaceOption = { workspace_id: string; name: string; role: string };
 
 export default function TeamPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("…");
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [email, setEmail] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -33,7 +36,8 @@ export default function TeamPage() {
   useEffect(() => {
     api.me().then((m) => setEmail(m.email)).catch(() => {});
     api.listWorkspaces().then((list) => {
-      const ws = list[0];
+      setWorkspaces(list);
+      const ws = resolveWorkspace(list);
       if (!ws) return;
       setWorkspaceId(ws.workspace_id);
       setWorkspaceName(ws.name);
@@ -108,7 +112,12 @@ export default function TeamPage() {
 
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
-      <WorkspaceSidebar workspaceName={workspaceName} active="/dashboard/team" />
+      <WorkspaceSidebar
+        workspaceName={workspaceName}
+        active="/dashboard/team"
+        workspaces={workspaces}
+        currentWorkspaceId={workspaceId ?? undefined}
+      />
 
       <main className="min-w-0">
         <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">

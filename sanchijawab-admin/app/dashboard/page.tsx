@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { resolveWorkspace } from "@/lib/workspace-store";
 
 interface Workspace {
   workspace_id: string;
@@ -20,6 +21,7 @@ interface Bot {
 export default function DashboardOverview() {
   const router = useRouter();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const [email, setEmail] = useState<string | null>(null);
   const [newBotName, setNewBotName] = useState("");
@@ -31,8 +33,9 @@ export default function DashboardOverview() {
 
   async function load() {
     try {
-      const workspaces = await api.listWorkspaces();
-      const ws = workspaces[0];
+      const list = await api.listWorkspaces();
+      setWorkspaces(list);
+      const ws = resolveWorkspace(list);
       if (!ws) {
         setError("No workspace found for this account.");
         return;
@@ -82,7 +85,12 @@ export default function DashboardOverview() {
 
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
-      <WorkspaceSidebar workspaceName={workspace?.name ?? "…"} active="/dashboard" />
+      <WorkspaceSidebar
+        workspaceName={workspace?.name ?? "…"}
+        active="/dashboard"
+        workspaces={workspaces}
+        currentWorkspaceId={workspace?.workspace_id}
+      />
 
       <main className="min-w-0">
         <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">
