@@ -6,10 +6,10 @@ just filtered by tenant_id/bot_id/visibility instead of `site`.
 """
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Chunk, Document
+from ..models import Chunk, Document, Source
 from .embeddings import embed_one
 from .tracing import get_langfuse
 
@@ -30,12 +30,19 @@ async def hybrid_search(
 
         vector_score = (1 - Chunk.embedding.cosine_distance(query_vector)).label("vector_score")
         text_score = func.ts_rank_cd(Chunk.tsv, func.plainto_tsquery("english", query)).label("text_score")
+        # Manual Q&A pairs override crawled/file content on conflict
+        # (FR-K7) — a flat +1.0 outranks any possible vector+text
+        # combination (each maxes out well under 1.0 on its own), so a QA
+        # correction wins outright rather than just nudging the ranking;
+        # that's the whole point of "override", not "slightly prefer".
+        qa_boost = case((Source.type == "qa", 1.0), else_=0.0).label("qa_boost")
 
         stmt = (
             select(Chunk.id, Chunk.text, Document.url, vector_score, text_score)
             .join(Document, Chunk.document_id == Document.id)
+            .join(Source, Document.source_id == Source.id)
             .where(Chunk.tenant_id == tenant_id, Chunk.bot_id == bot_id, Chunk.visibility == visibility)
-            .order_by((vector_score + text_score).desc())
+            .order_by((vector_score + text_score + qa_boost).desc())
             .limit(top_k)
         )
         rows = (await session.execute(stmt)).all()

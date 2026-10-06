@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { AddAnswerForm } from "@/components/AddAnswerForm";
 
 type Summary = {
   days: number;
@@ -20,51 +21,6 @@ type CrawlSuccess = { days: number; total_jobs: number; by_status: Record<string
 
 function pct(n: number | null): string {
   return n === null ? "—" : `${Math.round(n * 100)}%`;
-}
-
-function AddAnswerForm({ question, onSaved }: { question: string | null; onSaved: () => void }) {
-  const { botId } = useParams<{ botId: string }>();
-  const [open, setOpen] = useState(false);
-  const [answer, setAnswer] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  if (saved) return <span className="text-xs text-success">Added to knowledge base</span>;
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="text-xs text-accent-ink underline">
-        Add answer
-      </button>
-    );
-  }
-
-  return (
-    <div className="mt-2 flex gap-2">
-      <input
-        className="flex-1 border border-border rounded-lg px-2 py-1 text-sm"
-        placeholder="Answer to save as knowledge…"
-        value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
-      />
-      <button
-        disabled={saving || !answer.trim()}
-        onClick={async () => {
-          setSaving(true);
-          try {
-            await api.addQaPair(botId, question || "", answer.trim());
-            setSaved(true);
-            onSaved();
-          } finally {
-            setSaving(false);
-          }
-        }}
-        className="bg-accent text-white rounded-lg px-3 py-1 text-sm disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
-    </div>
-  );
 }
 
 export default function AnalyticsPage() {

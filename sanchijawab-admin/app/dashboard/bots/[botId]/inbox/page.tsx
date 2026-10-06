@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { AddAnswerForm } from "@/components/AddAnswerForm";
 
 type ConversationSummary = {
   conversation_id: string;
@@ -32,6 +33,17 @@ const STATUS_TABS = [
 ];
 
 const ROLE_LABEL: Record<string, string> = { visitor: "Visitor", bot: "Bot", agent: "Agent", system: "System" };
+
+/** The visitor message immediately before a given bot message — same
+ * "preceding question" logic the Analytics unanswered-questions report
+ * uses server-side, just computed client-side here since we already have
+ * the whole transcript loaded. */
+function precedingQuestion(messages: ConversationDetail["messages"], index: number): string | null {
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages[i].role === "visitor") return messages[i].content;
+  }
+  return null;
+}
 
 export default function InboxPage() {
   const { botId } = useParams<{ botId: string }>();
@@ -157,7 +169,7 @@ export default function InboxPage() {
               )}
 
               <div className="space-y-3 max-h-80 overflow-y-auto mb-3">
-                {detail.messages.map((m) => (
+                {detail.messages.map((m, i) => (
                   <div key={m.id} className={m.role === "visitor" ? "text-right" : ""}>
                     <span className="text-xs text-fg-faint">{ROLE_LABEL[m.role] || m.role}</span>
                     <div
@@ -167,6 +179,21 @@ export default function InboxPage() {
                     >
                       {m.content}
                     </div>
+                    {m.role === "bot" && (
+                      <div>
+                        {/* FR-R3 — correct a wrong-but-answered reply right from the
+                            transcript; saves as real retrievable knowledge via the
+                            same qa_pairs pipeline the Analytics report uses, not
+                            just a note on this one conversation. */}
+                        <AddAnswerForm
+                          question={precedingQuestion(detail.messages, i)}
+                          initialAnswer={m.content}
+                          label="Correct this answer"
+                          savedLabel="Correction saved to knowledge base"
+                          onSaved={() => {}}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
