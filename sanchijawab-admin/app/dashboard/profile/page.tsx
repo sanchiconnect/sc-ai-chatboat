@@ -86,8 +86,9 @@ export default function ProfilePage() {
           {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3">{error}</div>}
           {notice && <div className="text-[13px] text-success bg-success-soft rounded-lg p-3">{notice}</div>}
           <div>
-            <label className="text-[12.5px] font-medium">Current password</label>
+            <label htmlFor="profile-current-password" className="text-[12.5px] font-medium">Current password</label>
             <input
+              id="profile-current-password"
               type="password"
               required
               className="mt-1 w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"

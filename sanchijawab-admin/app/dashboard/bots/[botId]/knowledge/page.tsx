@@ -248,6 +248,7 @@ export default function KnowledgePage() {
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="Upload a knowledge file"
           accept={ACCEPTED_FILE_TYPES}
           onChange={onFilePicked}
           disabled={uploading}

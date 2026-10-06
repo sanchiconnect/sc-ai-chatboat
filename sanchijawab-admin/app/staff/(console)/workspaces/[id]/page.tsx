@@ -182,6 +182,7 @@ export default function StaffWorkspaceDetailPage() {
                 value={bot.status}
                 disabled={savingBotId === bot.id}
                 onChange={(e) => onStatusChange(bot.id, e.target.value as StaffWorkspaceBot["status"])}
+                aria-label={`Status for ${bot.name}`}
                 className={`text-[12px] font-semibold border border-border rounded-lg px-2 py-1.5 bg-surface-2 ${STATUS_PILL[bot.status]}`}
               >
                 {(Object.keys(STATUS_LABEL) as StaffWorkspaceBot["status"][]).map((s) => (
@@ -230,6 +231,7 @@ export default function StaffWorkspaceDetailPage() {
                         value={m.role}
                         disabled={busy}
                         onChange={(e) => changeRole(m.user_id, e.target.value)}
+                        aria-label={`Role for ${m.email}`}
                         className="border border-border bg-surface-2 rounded-lg px-2 py-1 text-[12px] disabled:opacity-50"
                       >
                         <option value="admin">Admin</option>
@@ -529,7 +531,7 @@ function DeleteWorkspaceConfirm({
           <button
             onClick={onConfirm}
             disabled={busy || !matches}
-            className="flex-1 bg-danger text-white rounded-lg py-2 text-[13px] font-semibold disabled:opacity-50"
+            className="flex-1 bg-danger text-[color:var(--on-danger)] rounded-lg py-2 text-[13px] font-semibold disabled:opacity-50"
           >
             {busy ? "Deleting…" : "Delete permanently"}
           </button>

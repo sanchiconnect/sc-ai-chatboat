@@ -79,6 +79,7 @@ export default function WidgetSettingsPage() {
               />
             ))}
             <input
+              aria-label="Primary color hex value"
               className="border border-border rounded-lg px-2 py-1 text-sm w-28"
               value={color}
               onChange={(e) => setColor(e.target.value)}
@@ -107,8 +108,9 @@ export default function WidgetSettingsPage() {
         </div>
 
         <div>
-          <label className="text-sm font-medium">Position</label>
+          <label htmlFor="widget-position" className="text-sm font-medium">Position</label>
           <select
+            id="widget-position"
             className="mt-1 w-full border border-border rounded-lg px-3 py-2"
             value={position}
             onChange={(e) => setPosition(e.target.value)}

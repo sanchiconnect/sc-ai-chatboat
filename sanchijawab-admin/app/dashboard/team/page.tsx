@@ -140,6 +140,7 @@ export default function TeamPage() {
           <select
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
+            aria-label="Role for invited teammate"
             className="border border-border bg-surface-2 rounded-lg px-2 py-2 text-[13px]"
           >
             <option value="admin">Admin</option>
@@ -185,6 +186,7 @@ export default function TeamPage() {
                             value={m.role}
                             disabled={busy}
                             onChange={(e) => changeRole(m.user_id, e.target.value)}
+                            aria-label={`Role for ${m.email}`}
                             className="border border-border bg-surface-2 rounded-lg px-2 py-1 text-[12.5px] disabled:opacity-50"
                           >
                             <option value="admin">Admin</option>

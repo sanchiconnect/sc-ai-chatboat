@@ -97,6 +97,7 @@ export default function AnalyticsPage() {
         <select
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
+          aria-label="Date range"
           className="border border-border rounded-lg px-2 py-1 text-sm"
         >
           <option value={7}>Last 7 days</option>

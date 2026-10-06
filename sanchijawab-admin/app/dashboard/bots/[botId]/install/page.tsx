@@ -40,7 +40,14 @@ export default function InstallPage() {
         Paste this just before the closing <code>&lt;/body&gt;</code> tag on every page.
       </p>
 
-      <pre className="bg-gray-900 text-gray-100 text-sm rounded-lg p-4 overflow-x-auto">{snippet}</pre>
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label="Install snippet"
+        className="bg-gray-900 text-gray-100 text-sm rounded-lg p-4 overflow-x-auto"
+      >
+        {snippet}
+      </pre>
 
       <button
         onClick={() => {

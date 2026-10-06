@@ -71,6 +71,7 @@ export function WorkspaceSidebar({
             <select
               value={currentWorkspaceId}
               onChange={(e) => switchWorkspace(e.target.value)}
+              aria-label="Switch workspace"
               className="w-full truncate border-none bg-transparent text-sm font-semibold p-0 focus:outline-none focus:ring-0"
             >
               {workspaces!.map((w) => (

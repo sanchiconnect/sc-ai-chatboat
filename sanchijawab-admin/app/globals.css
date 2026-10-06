@@ -9,18 +9,35 @@
   --border: #e3e1ef;
   --fg: #1c1a2e;
   --fg-muted: #6b6880;
-  --fg-faint: #9c99ae;
+  /* WCAG 2.2 AA pass: the original #9c99ae read at ~2.6:1 on surface/bg —
+     darkened to clear 4.5:1 against both, with margin for rendering/
+     rounding (see components/ui/button.tsx and badge.tsx for the paired
+     --warm/--danger fix). */
+  --fg-faint: #716d81;
   --accent: #3d46c9;
   --accent-ink: #2c33a0;
   --accent-soft: #ecebfa;
-  --warm: #f2622e;
+  /* Darkened from #f2622e (3.2:1 with white button text, 2.7:1 as the
+     "Most popular" badge's text-on-warm-soft) — this single value is both
+     a button background and a badge foreground, so it had to clear 4.5:1
+     in both roles at once. */
+  --warm: #a94520;
   --warm-soft: #fde7de;
-  --success: #1b9c63;
+  /* Darkened from #1b9c63 (3.4:1 on surface-2) */
+  --success: #15793e;
   --success-soft: #dff5ea;
   --warning: #c8860a;
   --warning-soft: #fcf0d8;
-  --danger: #d3453c;
+  /* Darkened from #d3453c — was already close (4.48:1) but just under */
+  --danger: #c33f36;
   --danger-soft: #fbe3e1;
+  /* Text color for solid-fill buttons (bg-warm/bg-danger) — white works in
+     light mode, but dark mode's lighter --warm/--danger (kept vivid for
+     their own badge/soft-pill pairings, which already passed) can't clear
+     4.5:1 with white text, so dark mode swaps to dark ink instead. See
+     components/ui/button.tsx. */
+  --on-warm: #ffffff;
+  --on-danger: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,7 +48,9 @@
     --border: #322e45;
     --fg: #efedfa;
     --fg-muted: #a6a2be;
-    --fg-faint: #716d8a;
+    /* WCAG 2.2 AA pass: #716d8a read 3.5-3.7:1 against these darker
+       surfaces — lightened to clear 4.5:1 against both. */
+    --fg-faint: #86839c;
     --accent: #4f55c9;
     --accent-ink: #c1c4f5;
     --accent-soft: #2a2a52;
@@ -43,6 +62,11 @@
     --warning-soft: #3a2e12;
     --danger: #f0776f;
     --danger-soft: #3a1f20;
+    /* --warm/--danger stay vivid here (their badge/soft-pill pairings
+       already clear 4.5:1) — white button text on them doesn't (2.4:1 /
+       2.8:1), so dark mode's button text goes dark instead. */
+    --on-warm: #1c1a2e;
+    --on-danger: #1c1a2e;
     color-scheme: dark;
   }
 }
@@ -56,7 +80,7 @@
   --border: #322e45;
   --fg: #efedfa;
   --fg-muted: #a6a2be;
-  --fg-faint: #716d8a;
+  --fg-faint: #86839c;
   --accent: #4f55c9;
   --accent-ink: #c1c4f5;
   --accent-soft: #2a2a52;
@@ -68,6 +92,8 @@
   --warning-soft: #3a2e12;
   --danger: #f0776f;
   --danger-soft: #3a1f20;
+  --on-warm: #1c1a2e;
+  --on-danger: #1c1a2e;
   color-scheme: dark;
 }
 
