@@ -44,6 +44,12 @@ jobs:
 
       - run: uv sync --frozen
 
+      - name: Install Playwright's Chromium
+        # test_payments.py's PDF-rendering test launches a real headless
+        # browser (render_invoice_pdf) — the runner has no browser binary
+        # until this installs one.
+        run: uv run playwright install --with-deps chromium
+
       - name: Run migrations
         run: uv run alembic upgrade head
 
@@ -54,6 +60,11 @@ jobs:
         # Real Postgres (the service above), not mocks — this test suite's
         # whole approach (see tests/conftest.py). No LLM API key needed:
         # Gemini calls are faked where tests actually hit that code path.
+        env:
+          # Test-only Fernet key, not a secret — nothing it protects
+          # outlives this ephemeral CI database. Locally this comes from
+          # .env (gitignored); CI has no .env, so it needs a value here.
+          PAYMENT_SECRET_KEY: "SIPYi-D42vUVpzQssFgIft0ibWVyOgY74VCpWqifqIk="
         run: uv run pytest -q
 
   admin:
