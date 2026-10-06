@@ -57,7 +57,7 @@ from .services.email import send_email, send_invite_email, send_verification_ema
 from .services.embeddings import embed_texts
 from .services.parser import DOCLING_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, TABULAR_EXTENSIONS, extension_of
 from .services.payments import razorpay_gateway, stripe_gateway
-from .services.payments.gateways import gateway_out, get_gateway_credentials, upsert_gateway
+from .services.payments.gateways import gateway_out, upsert_gateway
 from .services.payments.invoice import compute_gst_split, generate_invoice_html, render_invoice_pdf
 from .services.payments.sequence import next_invoice_number
 from .services.pii import mask_pii
@@ -1280,7 +1280,7 @@ async def get_conversation(conversation_id: str, user: CurrentUser = Depends(get
                 {"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat()}
                 for m in rows
             ],
-            "leads": [{"name": l.name, "email": l.email, "phone": l.phone} for l in leads],
+            "leads": [{"name": lead.name, "email": lead.email, "phone": lead.phone} for lead in leads],
         }
 
 
@@ -1339,11 +1339,11 @@ async def list_leads(bot_id: str, user: CurrentUser = Depends(get_current_user))
         ).scalars().all()
         return [
             {
-                "lead_id": l.id, "conversation_id": l.conversation_id, "name": l.name,
-                "email": l.email, "phone": l.phone, "created_at": l.created_at.isoformat(),
-                "pushed_to_crm": l.pushed_to_crm,
+                "lead_id": lead.id, "conversation_id": lead.conversation_id, "name": lead.name,
+                "email": lead.email, "phone": lead.phone, "created_at": lead.created_at.isoformat(),
+                "pushed_to_crm": lead.pushed_to_crm,
             }
-            for l in rows
+            for lead in rows
         ]
 
 

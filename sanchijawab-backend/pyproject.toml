@@ -61,9 +61,33 @@ dependencies = [
 dev = [
     "pytest==8.3.4",
     "pytest-asyncio==0.25.0",
+    "ruff>=0.16.10",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+# This codebase's existing style already runs long lines (function
+# signatures with full type hints, inline comments); 220 covers the
+# longest real line with a little margin rather than reflowing existing
+# code just to satisfy a narrower limit picked after the fact.
+line-length = 220
+# Migrations are generated/historical records, not hand-maintained for
+# style; poc/ is Phase 0 throwaway exploration scripts (see docker-compose.yml).
+exclude = ["alembic/versions", "app/poc"]
+
+[tool.ruff.lint]
+# Pyflakes (real bugs: unused imports, undefined names) + pycodestyle
+# errors — deliberately not the full "ALL"/opinionated plugin surface
+# (datetime timezone-awareness, blind-except, etc.) for a first pass on an
+# existing codebase; widen this later if the team wants stricter rules.
+select = ["E", "F"]
+ignore = [
+    # Several files deliberately run code (Sentry init, Windows stdout
+    # UTF-8 reconfigure) before their remaining imports — real ordering
+    # requirements, not style mistakes.
+    "E402",
+]

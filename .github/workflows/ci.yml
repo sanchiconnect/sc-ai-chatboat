@@ -1,0 +1,79 @@
+name: CI
+
+"on":
+  # Pushes land directly on feature branches here (no PR-based workflow
+  # yet), so this isn't restricted to main — pull_request stays too, for
+  # whenever that changes.
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sanchijawab-backend
+    services:
+      # Same image/credentials/port as docker-compose.yml's db service, so
+      # app/config.py's defaults (db_host=localhost, db_port=55432, user/
+      # pass/name=sanchijawab) work here with zero overrides.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: sanchijawab
+          POSTGRES_USER: sanchijawab
+          POSTGRES_PASSWORD: sanchijawab
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U sanchijawab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: sanchijawab-backend/uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        # Real Postgres (the service above), not mocks — this test suite's
+        # whole approach (see tests/conftest.py). No LLM API key needed:
+        # Gemini calls are faked where tests actually hit that code path.
+        run: uv run pytest -q
+
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sanchijawab-admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sanchijawab-admin/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit

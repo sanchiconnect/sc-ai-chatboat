@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import BillingProfile, Order, Plan, Workspace
