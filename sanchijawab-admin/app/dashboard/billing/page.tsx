@@ -29,6 +29,14 @@ type OrderRow = {
   status: string; invoice_number: string; created_at: string; paid_at: string | null;
 };
 
+type Usage = {
+  on_trial: boolean; trial_ends_at: string | null; plan_id: string | null; plan_name: string | null;
+  messages: { used: number; limit: number | null };
+  pages: { used: number; limit: number | null };
+  files: { used: number; limit: number | null };
+  seats: { used: number; limit: number | null };
+};
+
 const EMPTY_CUSTOMER = {
   customer_name: "", customer_gstin: "", customer_address: "",
   customer_city: "", customer_state: "", customer_country: "India", customer_pincode: "",
@@ -81,6 +89,7 @@ export default function BillingPage() {
 
   const [availableGateways, setAvailableGateways] = useState<Gateway2[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null);
   const [customerForm, setCustomerForm] = useState(EMPTY_CUSTOMER);
   const [checkingOut, setCheckingOut] = useState(false);
@@ -134,6 +143,7 @@ export default function BillingPage() {
       setWorkspaceName(ws.name);
       setWorkspaceId(ws.workspace_id);
       await loadOrders(ws.workspace_id);
+      api.getUsage(ws.workspace_id).then(setUsage).catch(() => {});
 
       // Stripe redirects the browser back here after checkout. We don't know
       // the order id until after creating it (too late to bake into the
@@ -147,6 +157,7 @@ export default function BillingPage() {
         try {
           await api.confirmOrder(pendingOrderId);
           setCheckoutNotice({ kind: "success", text: "Payment confirmed — your invoice is ready below." });
+          api.getUsage(ws.workspace_id).then(setUsage).catch(() => {});
         } catch (err) {
           setCheckoutNotice({
             kind: "error",
@@ -264,7 +275,10 @@ export default function BillingPage() {
               await api.confirmOrder(order.order_id);
               setCheckoutNotice({ kind: "success", text: "Payment confirmed — your invoice is ready below." });
               setCheckoutPlan(null);
-              if (workspaceId) await loadOrders(workspaceId);
+              if (workspaceId) {
+                await loadOrders(workspaceId);
+                api.getUsage(workspaceId).then(setUsage).catch(() => {});
+              }
             } catch (err) {
               setCheckoutNotice({
                 kind: "error",
@@ -362,6 +376,8 @@ export default function BillingPage() {
         )}
 
         {loading && <p className="text-fg-muted text-sm">Loading…</p>}
+
+        {!isSuperAdmin && usage && <UsageCard usage={usage} />}
 
         {!loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -837,6 +853,50 @@ export default function BillingPage() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+function UsageBar({ label, used, limit }: { label: string; used: number; limit: number | null }) {
+  const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const near = limit !== null && used >= limit;
+  return (
+    <div>
+      <div className="flex justify-between text-[12px] text-fg-muted mb-1">
+        <span>{label}</span>
+        <span className="tabular">{limit === null ? `${used} (unlimited)` : `${used} / ${limit}`}</span>
+      </div>
+      {limit !== null && (
+        <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${near ? "bg-danger" : "bg-accent"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsageCard({ usage }: { usage: Usage }) {
+  return (
+    <div className="bg-surface border border-border rounded-2xl shadow-card p-5 mb-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h3 className="font-display text-[16px] font-semibold">
+          {usage.on_trial ? "Free trial" : usage.plan_name || "Current plan"}
+        </h3>
+        {usage.on_trial && usage.trial_ends_at && (
+          <span className="text-[11px] font-bold uppercase tracking-wide text-accent-ink bg-accent-soft rounded-full px-2 py-0.5">
+            Ends {new Date(usage.trial_ends_at).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+        <UsageBar label="Messages this month" used={usage.messages.used} limit={usage.messages.limit} />
+        <UsageBar label="Indexed pages" used={usage.pages.used} limit={usage.pages.limit} />
+        <UsageBar label="Uploaded files" used={usage.files.used} limit={usage.files.limit} />
+        <UsageBar label="Team seats" used={usage.seats.used} limit={usage.seats.limit} />
+      </div>
     </div>
   );
 }

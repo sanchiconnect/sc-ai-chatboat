@@ -61,6 +61,15 @@ from .services.payments.gateways import gateway_out, upsert_gateway
 from .services.payments.invoice import compute_gst_split, generate_invoice_html, render_invoice_pdf
 from .services.payments.sequence import next_invoice_number
 from .services.pii import mask_pii
+from .services.plan_limits import (
+    enforce_file_limit,
+    enforce_message_limit,
+    enforce_page_limit,
+    enforce_seat_limit,
+    enforce_trial_or_plan,
+    get_usage_summary,
+    start_trial,
+)
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
 from .services.tracing import get_langfuse
@@ -120,6 +129,7 @@ async def signup(body: SignupRequest):
         await session.flush()
 
         workspace = Workspace(tenant_id=tenant_id, name=body.business_name)
+        await start_trial(workspace)
         session.add(workspace)
         await session.flush()
 
@@ -277,6 +287,8 @@ async def invite_member(
         workspace = await session.get(Workspace, workspace_id)
         if workspace is None:
             raise HTTPException(404, "Workspace not found")
+        await enforce_trial_or_plan(session, workspace)
+        await enforce_seat_limit(session, workspace)
 
         invited = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
         is_new_user = invited is None
@@ -650,6 +662,10 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="admin")
 
+        workspace = await session.get(Workspace, bot.workspace_id)
+        await enforce_trial_or_plan(session, workspace)
+        await enforce_page_limit(session, workspace)
+
         source = Source(
             tenant_id=bot.tenant_id, bot_id=body.bot_id, type="website",
             url=body.url, visibility=body.visibility, status="pending",
@@ -692,6 +708,10 @@ async def create_file_source(
         if bot is None:
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        workspace = await session.get(Workspace, bot.workspace_id)
+        await enforce_trial_or_plan(session, workspace)
+        await enforce_file_limit(session, workspace)
 
         key = f"{bot.tenant_id}/{bot_id}/{uuid.uuid4()}-{file.filename}"
         storage.upload_bytes(key, data, file.content_type or "application/octet-stream")
@@ -1063,6 +1083,10 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
     if workspace is None or not workspace.is_active:
         raise HTTPException(403, "This assistant isn't currently available")
     _enforce_domain_allowlist(bot, request)
+
+    async with SessionLocal() as session:
+        await enforce_trial_or_plan(session, workspace)
+        await enforce_message_limit(session, workspace)
 
     async with SessionLocal() as session:
         conv = await get_or_create_conversation(
@@ -1847,8 +1871,26 @@ async def confirm_order(order_id: str, user: CurrentUser = Depends(get_current_u
         order.gateway_transaction_id = transaction_id
         order.status = "paid"
         order.paid_at = datetime.utcnow()
+
+        # Moves the workspace off trial onto this plan's caps (SAN-1063/1119,
+        # FR-A4) — trial_ends_at is left alone as a historical record; it's
+        # simply never consulted again once plan_id is set.
+        workspace = await session.get(Workspace, order.workspace_id)
+        if workspace is not None and order.plan_id:
+            workspace.plan_id = order.plan_id
+
         await session.commit()
         return _order_out(order)
+
+
+@app.get("/v1/workspaces/{workspace_id}/usage")
+async def workspace_usage(workspace_id: str, user: CurrentUser = Depends(get_current_user)):
+    await require_workspace_role(workspace_id, user, min_role="viewer")
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        return await get_usage_summary(session, workspace)
 
 
 @app.get("/v1/workspaces/{workspace_id}/orders")

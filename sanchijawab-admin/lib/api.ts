@@ -422,6 +422,15 @@ export const api = {
       }[]
     >(`/v1/workspaces/${workspaceId}/orders`),
 
+  getUsage: (workspaceId: string) =>
+    request<{
+      on_trial: boolean; trial_ends_at: string | null; plan_id: string | null; plan_name: string | null;
+      messages: { used: number; limit: number | null };
+      pages: { used: number; limit: number | null };
+      files: { used: number; limit: number | null };
+      seats: { used: number; limit: number | null };
+    }>(`/v1/workspaces/${workspaceId}/usage`),
+
   // The invoice endpoint reads auth from the Authorization header, which a
   // plain <a href> can't set — fetch it with the header attached and hand
   // the caller a blob: URL to open/download instead.

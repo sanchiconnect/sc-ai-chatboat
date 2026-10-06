@@ -45,6 +45,12 @@ class Workspace(Base):
     # any individual member account is otherwise fine.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # FR-A4 (SAN-1063/1119) — set once at signup, never moved. A workspace is
+    # "on trial" exactly when plan_id is still null and trial_ends_at hasn't
+    # passed; once a paid order is confirmed, plan_id is set and trial_ends_at
+    # is simply no longer consulted (kept as a historical record, not cleared).
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    plan_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("plans.id"), nullable=True)
 
     bots: Mapped[list["Bot"]] = relationship(back_populates="workspace")
 
@@ -302,6 +308,12 @@ class Plan(Base):
     currency: Mapped[str] = mapped_column(String(8), default="INR")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Usage caps (SAN-1063/1119, FR-A4) — null means unlimited, same
+    # nullable-means-"not a real number yet" convention as `amount`.
+    max_messages_per_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_files: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_seats: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
