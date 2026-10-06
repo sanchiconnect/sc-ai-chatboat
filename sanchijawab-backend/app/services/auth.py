@@ -3,10 +3,6 @@
 Email verification and invite tokens are sent for real via services/email.py
 when SMTP_* is configured in .env; the token is also still returned in the
 API response as a local-dev fallback for when it isn't.
-
-Google sign-in (FR-A1) is not implemented — needs a Google Cloud OAuth
-client + redirect URI, which is a product/infra decision, not something
-to fabricate.
 """
 from __future__ import annotations
 
