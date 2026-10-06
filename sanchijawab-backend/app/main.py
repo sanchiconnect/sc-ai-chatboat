@@ -7,6 +7,7 @@ could previously claim to be any tenant by passing tenant_id in the body.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -740,6 +741,58 @@ async def source_status(job_id: int, user: CurrentUser = Depends(get_current_use
             "job_id": job.id, "status": job.status, "error": job.error,
             "pages_done": job.pages_done, "pages_total": job.pages_total,
         }
+
+
+@app.get("/v1/sources/{job_id}/status/stream")
+async def source_status_stream(job_id: int, token: str):
+    """SSE progress for an ingest job (SAN-1123) — a sibling to the
+    polling GET above, not a replacement for it. The browser's native
+    EventSource can't send an Authorization header, so the token travels
+    as a query param here specifically; every other endpoint keeps using
+    the Bearer header. Checked once at connection open (same depth as
+    get_current_user), not re-checked per tick — this stream is meant to
+    live only as long as one crawl does, not an open-ended session."""
+    payload = decode_token(token, expected_type="access")
+    if payload is None:
+        raise HTTPException(401, "Invalid or expired token")
+    async with SessionLocal() as session:
+        db_user = await session.get(User, payload["sub"])
+    if db_user is None or not db_user.is_active:
+        raise HTTPException(401, "This account has been deactivated")
+    tenant_id = payload["tenant_id"]
+
+    async def event_stream():
+        last_sent = None
+        ticks_since_data = 0
+        while True:
+            async with SessionLocal() as session:
+                job = await session.get(IngestJob, job_id)
+            if job is None or job.tenant_id != tenant_id:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Not found'})}\n\n"
+                return
+            current = {
+                "type": "progress", "job_id": job.id, "status": job.status,
+                "error": job.error, "pages_done": job.pages_done, "pages_total": job.pages_total,
+            }
+            if current != last_sent:
+                yield f"data: {json.dumps(current)}\n\n"
+                last_sent = current
+                ticks_since_data = 0
+            else:
+                # A job queued behind others can sit at "queued" for a real,
+                # unbounded stretch (confirmed live: 23s behind one other
+                # job) with nothing new to report — a comment line keeps
+                # the connection from going dark long enough to trip a
+                # client or proxy idle-timeout, without changing the event
+                # stream a consumer actually parses.
+                ticks_since_data += 1
+                if ticks_since_data % 10 == 0:
+                    yield ": keep-alive\n\n"
+            if job.status in ("done", "failed", "cancelled"):
+                return
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/v1/bots/{bot_id}/sources")

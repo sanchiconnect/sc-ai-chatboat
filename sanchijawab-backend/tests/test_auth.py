@@ -64,7 +64,9 @@ async def test_invite_new_user_then_accept_invite_then_login(client: AsyncClient
             headers=signed_up_owner["headers"],
         )
     ).json()
-    assert invite["email_sent"] is False  # no SMTP configured in this env
+    # email_sent depends on whether SMTP is configured in this environment
+    # (local dev with real creds vs. CI without) — not a constant, so don't
+    # assert either way; invite_token is returned unconditionally.
     assert invite["invite_token"]
 
     accept = await client.post(
