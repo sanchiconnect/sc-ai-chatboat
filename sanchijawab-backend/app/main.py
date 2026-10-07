@@ -491,7 +491,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
         return {
             "bot_id": bot.id, "name": bot.name, "persona": bot.persona,
             "instructions": bot.instructions, "model_tier": bot.model_tier,
@@ -516,7 +516,7 @@ async def install_check(bot_id: str, user: CurrentUser = Depends(get_current_use
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
         return {
             "installed": bot.widget_last_seen_at is not None,
             "last_seen_at": bot.widget_last_seen_at.isoformat() if bot.widget_last_seen_at else None,
@@ -545,7 +545,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         for webhook in (body.crm_webhook_url, body.slack_webhook_url):
             if webhook:
@@ -587,7 +587,7 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         source_ids = (await session.execute(select(Source.id).where(Source.bot_id == bot_id))).scalars().all()
         conversation_ids = (
@@ -666,7 +666,7 @@ async def list_teams(bot_id: str, user: CurrentUser = Depends(get_current_user))
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
 
         teams = (await session.execute(select(Team).where(Team.bot_id == bot_id))).scalars().all()
         return [{"team_id": t.id, "name": t.name} for t in teams]
@@ -678,7 +678,7 @@ async def create_team(bot_id: str, body: CreateTeamRequest, user: CurrentUser = 
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         team = Team(tenant_id=bot.tenant_id, bot_id=bot_id, name=body.name)
         session.add(team)
@@ -693,7 +693,7 @@ async def delete_team(team_id: str, user: CurrentUser = Depends(get_current_user
         if team is None:
             raise HTTPException(404, "Team not found")
         bot = await session.get(Bot, team.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         await session.execute(delete(RoutingRule).where(RoutingRule.team_id == team_id))
         await session.execute(
@@ -717,7 +717,7 @@ async def list_routing_rules(bot_id: str, user: CurrentUser = Depends(get_curren
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
 
         rules = (
             await session.execute(
@@ -739,7 +739,7 @@ async def create_routing_rule(bot_id: str, body: RoutingRuleRequest, user: Curre
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         team = await session.get(Team, body.team_id)
         if team is None or team.bot_id != bot_id:
@@ -764,7 +764,7 @@ async def delete_routing_rule(rule_id: str, user: CurrentUser = Depends(get_curr
         if rule is None:
             raise HTTPException(404, "Routing rule not found")
         bot = await session.get(Bot, rule.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         await session.delete(rule)
         await session.commit()
@@ -866,7 +866,7 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
 
         config = await session.get(WidgetConfig, bot_id)
         if config is None:
@@ -913,7 +913,7 @@ async def update_widget_config(
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         config = await session.get(WidgetConfig, bot_id)
         if config is None:
@@ -1019,7 +1019,7 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
         bot = await session.get(Bot, body.bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         workspace = await session.get(Workspace, bot.workspace_id)
         await enforce_trial_or_plan(session, workspace)
@@ -1066,7 +1066,7 @@ async def create_file_source(
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         workspace = await session.get(Workspace, bot.workspace_id)
         await enforce_trial_or_plan(session, workspace)
@@ -1159,7 +1159,7 @@ async def list_sources(bot_id: str, user: CurrentUser = Depends(get_current_user
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
 
         sources = (await session.execute(select(Source).where(Source.bot_id == bot_id))).scalars().all()
         result = []
@@ -1193,7 +1193,7 @@ async def rescan_source(source_id: str, user: CurrentUser = Depends(get_current_
         if source.type != "website":
             raise HTTPException(400, "Only website sources can be re-scanned")
         bot = await session.get(Bot, source.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         in_flight = (
             await session.execute(
@@ -1224,7 +1224,7 @@ async def stop_source(source_id: str, user: CurrentUser = Depends(get_current_us
         if source is None:
             raise HTTPException(404, "Source not found")
         bot = await session.get(Bot, source.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         job = (
             await session.execute(
@@ -1254,7 +1254,7 @@ async def update_source(source_id: str, body: UpdateSourceRequest, user: Current
         if source is None:
             raise HTTPException(404, "Source not found")
         bot = await session.get(Bot, source.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         source.rescan_interval_days = body.rescan_interval_days
         source.next_scan_at = datetime.utcnow() + timedelta(days=body.rescan_interval_days)
@@ -1279,7 +1279,7 @@ async def list_documents(source_id: str, user: CurrentUser = Depends(get_current
         if source is None:
             raise HTTPException(404, "Source not found")
         bot = await session.get(Bot, source.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer", session=session)
 
         docs = (await session.execute(select(Document).where(Document.source_id == source_id))).scalars().all()
         return [
@@ -1396,7 +1396,7 @@ async def delete_source(source_id: str, user: CurrentUser = Depends(get_current_
         if source is None:
             raise HTTPException(404, "Source not found")
         bot = await session.get(Bot, source.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         # Chunks reference bot_id, not source_id directly, but every chunk
         # for this source came from one of its documents — look those up
@@ -1801,7 +1801,7 @@ async def list_conversations(
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         stmt = select(Conversation).where(Conversation.bot_id == bot_id).order_by(Conversation.started_at.desc())
         if status:
@@ -1839,7 +1839,7 @@ async def get_conversation(conversation_id: str, user: CurrentUser = Depends(get
         if conv is None:
             raise HTTPException(404, "Conversation not found")
         bot = await session.get(Bot, conv.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         rows = await list_messages(session, conversation_id=conversation_id)
         leads = (
@@ -1869,7 +1869,7 @@ async def reply_conversation(conversation_id: str, body: ReplyRequest, user: Cur
         if conv is None:
             raise HTTPException(404, "Conversation not found")
         bot = await session.get(Bot, conv.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         conv.status = "human"
         conv.assigned_agent_id = user.user_id
@@ -1888,7 +1888,7 @@ async def close_conversation(conversation_id: str, user: CurrentUser = Depends(g
         if conv is None:
             raise HTTPException(404, "Conversation not found")
         bot = await session.get(Bot, conv.bot_id)
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         conv.status = "closed"
         await session.commit()
@@ -1901,7 +1901,7 @@ async def list_leads(bot_id: str, user: CurrentUser = Depends(get_current_user))
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         rows = (
             await session.execute(
@@ -1930,7 +1930,7 @@ async def analytics_summary(bot_id: str, days: int = 30, user: CurrentUser = Dep
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         cutoff = datetime.utcnow() - timedelta(days=days)
         convs = (
@@ -2001,7 +2001,7 @@ async def analytics_unanswered(bot_id: str, days: int = 30, user: CurrentUser = 
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         cutoff = datetime.utcnow() - timedelta(days=days)
         bot_msgs = (
@@ -2047,7 +2047,7 @@ async def analytics_crawl_success(bot_id: str, days: int = 30, user: CurrentUser
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         cutoff = datetime.utcnow() - timedelta(days=days)
         rows = (
@@ -2078,7 +2078,7 @@ async def add_qa_pair(bot_id: str, body: QAPairRequest, user: CurrentUser = Depe
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         qa = await create_qa_pair(
             session, bot_id=bot_id, tenant_id=bot.tenant_id, question=body.question, answer=body.answer,
@@ -2092,7 +2092,7 @@ async def list_qa_pairs(bot_id: str, user: CurrentUser = Depends(get_current_use
         bot = await session.get(Bot, bot_id)
         if bot is None:
             raise HTTPException(404, "Bot not found")
-        await require_workspace_role(bot.workspace_id, user, min_role="agent")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         rows = (
             await session.execute(
@@ -2536,7 +2536,7 @@ async def confirm_order(order_id: str, user: CurrentUser = Depends(get_current_u
         order = await session.get(Order, order_id)
         if order is None:
             raise HTTPException(404, "Order not found")
-        await require_workspace_role(order.workspace_id, user, min_role="admin")
+        await require_workspace_role(order.workspace_id, user, min_role="admin", session=session)
 
         if order.status == "paid":
             return _order_out(order)  # idempotent — already confirmed
@@ -2597,7 +2597,7 @@ async def get_order_invoice(order_id: str, format: str = "html", user: CurrentUs
         order = await session.get(Order, order_id)
         if order is None:
             raise HTTPException(404, "Order not found")
-        await require_workspace_role(order.workspace_id, user, min_role="viewer")
+        await require_workspace_role(order.workspace_id, user, min_role="viewer", session=session)
         if order.status != "paid":
             raise HTTPException(400, "Invoice isn't available until this order is paid")
 

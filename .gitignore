@@ -23,3 +23,5 @@ sanchijawab-admin/tsconfig.tsbuildinfo
 sanchijawab-widget/node_modules/
 sanchijawab-widget/dist/
 sanchijawab-widget/widget_test_screenshot.png
+
+sanchijawab-backend/app/eval/last_run.json

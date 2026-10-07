@@ -1,0 +1,60 @@
+name: Weekly evaluation
+
+# Runs the 150-question eval set through the real pipeline every Monday and
+# fails the run if answer quality regressed against app/eval/baseline.json
+# (SAN-1131). Needs one repository secret: CLOUD_API_KEY (the Gemini key).
+# It crawls the 5 eval sites into a throwaway database each time, so it takes
+# a while and spends real Gemini calls (~150 answers + a few judge calls).
+
+"on":
+  schedule:
+    - cron: "30 3 * * 1"   # Mondays 03:30 UTC
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: sanchijawab-backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: sanchijawab
+          POSTGRES_USER: sanchijawab
+          POSTGRES_PASSWORD: sanchijawab
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U sanchijawab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: sanchijawab-backend/uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run alembic upgrade head
+        env:
+          JWT_SECRET: "ci-only-jwt-secret-not-used-anywhere-else"
+      - name: Run evaluation
+        env:
+          CLOUD_API_KEY: ${{ secrets.CLOUD_API_KEY }}
+          JWT_SECRET: "ci-only-jwt-secret-not-used-anywhere-else"
+          # The workflow runs on a fresh public runner, so the SSRF guard stays on.
+        run: uv run python -m app.eval.run
+      - name: Keep the run's full results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-last-run
+          path: sanchijawab-backend/app/eval/last_run.json

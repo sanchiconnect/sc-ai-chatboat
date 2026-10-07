@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import SessionLocal
 from .models import Membership, User, Workspace
@@ -38,16 +39,28 @@ async def get_current_user(authorization: str = Header(default="")) -> CurrentUs
     return CurrentUser(user_id=payload["sub"], tenant_id=payload["tenant_id"])
 
 
-async def require_workspace_role(workspace_id: str, user: CurrentUser, min_role: str) -> Membership:
-    async with SessionLocal() as session:
-        workspace = await session.get(Workspace, workspace_id)
-        membership = (
-            await session.execute(
-                select(Membership).where(
-                    Membership.workspace_id == workspace_id, Membership.user_id == user.user_id
-                )
-            )
-        ).scalar_one_or_none()
+async def _load_workspace_and_membership(session: AsyncSession, workspace_id: str, user_id: str):
+    workspace = await session.get(Workspace, workspace_id)
+    membership = (
+        await session.execute(
+            select(Membership).where(Membership.workspace_id == workspace_id, Membership.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    return workspace, membership
+
+
+async def require_workspace_role(
+    workspace_id: str, user: CurrentUser, min_role: str, session: AsyncSession | None = None
+) -> Membership:
+    """Pass the caller's open `session` whenever it has one: opening a second
+    session while the first still holds a pooled connection needs two
+    connections per request, which deadlocks the pool (30s hangs) once the
+    number of concurrent requests exceeds the pool size."""
+    if session is not None:
+        workspace, membership = await _load_workspace_and_membership(session, workspace_id, user.user_id)
+    else:
+        async with SessionLocal() as own_session:
+            workspace, membership = await _load_workspace_and_membership(own_session, workspace_id, user.user_id)
 
     # Checked even before membership, so a deactivated workspace blocks every
     # member equally — this is a workspace-wide gate, separate from any one

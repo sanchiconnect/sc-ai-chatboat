@@ -1,0 +1,45 @@
+DRAFT FOR LEGAL REVIEW. Text in [SQUARE BRACKETS] must be filled in or confirmed by counsel before this is offered to any customer. It describes what the product actually does as built on 2026-10-07 and is not legal advice.
+
+## Parties and scope
+
+This Data Processing Addendum ("DPA") forms part of the agreement between the customer ("Controller" / "Data Fiduciary") and [COMPANY LEGAL NAME], [ADDRESS] ("Processor"). It applies to personal data that visitors and customer staff put into the SanchiJawab service, which Processor handles only on the customer's behalf.
+
+## Subject matter, nature and duration
+
+Processor hosts the customer's chat assistant: it crawls and indexes the customer's content, answers visitor questions from that content, stores conversations and lead details, and lets the customer's team review and respond. Processing lasts for the term of the agreement plus the deletion period below.
+
+## Types of data and people
+
+Data: visitor chat messages, page address, anonymous visitor identifier, language, ratings, optional name, email and phone from lead forms; customer staff names, emails and roles. People: the customer's website visitors and the customer's team members. The customer must not use the service to collect special categories of data [OR: list permitted categories, per counsel].
+
+## Processor's obligations
+
+Process personal data only on the customer's documented instructions, which are the agreement and the customer's use of the settings and features of the service. Make sure everyone authorised to process the data is bound by confidentiality. Keep the data of each customer logically separated from every other customer's. Help the customer answer visitors' rights requests using the built-in export and erase tools, and by email within [DAYS] days where the tools do not cover the request. Help the customer with security, breach notification and impact assessments, taking into account the information available to Processor.
+
+## Security measures
+
+Per-customer data separation covered by automated tests; password hashing with bcrypt; encryption at rest of payment-gateway secrets; rate limiting on sign-in and public chat; protection against requests to internal network addresses; role-based access for customer teams; an audit log of platform staff actions; masking of contact details and card numbers in stored bot replies; and customer-configurable automatic deletion of old conversations. [Add: transport encryption, backups, hosting-provider certifications once the hosting provider is chosen.]
+
+## Sub-processors
+
+The customer gives general authorisation for the following sub-processors: Google (Gemini API, answer generation); Langfuse (AI request tracing); [HOSTING PROVIDER, REGION]; [EMAIL PROVIDER]; Razorpay and Stripe (payments, customer billing data only); Sentry (error reports); [Cohere, only if reranking is enabled]. Processor will give the customer [30] days' notice of a new sub-processor and the customer may object on reasonable data-protection grounds. Processor stays responsible for its sub-processors.
+
+## International transfers
+
+Data may be processed in [REGIONS]. Where personal data of people in the EEA, UK or Switzerland is transferred to a country without an adequacy decision, the parties rely on [STANDARD CONTRACTUAL CLAUSES / OTHER MECHANISM]. [Counsel to confirm, and to address India DPDP cross-border rules.]
+
+## Personal data breaches
+
+Processor will notify the customer without undue delay, and within [48] hours, after becoming aware of a breach affecting the customer's personal data, with the information then available and updates as they emerge.
+
+## Deletion and return
+
+During the term the customer can export or delete visitor data, set automatic retention, and delete an assistant or workspace. Within [30] days after the agreement ends, Processor deletes the customer's personal data, except where law requires it to be kept, and confirms deletion on request. Backups age out within [BACKUP PERIOD].
+
+## Audits
+
+Processor will provide information reasonably needed to show compliance with this DPA and allow audits by the customer or its auditor [once a year, on reasonable notice, at the customer's cost, subject to confidentiality].
+
+## Liability and governing law
+
+[Liability terms follow the main agreement.] This DPA is governed by [GOVERNING LAW] and the courts of [JURISDICTION].

@@ -1,0 +1,45 @@
+DRAFT FOR LEGAL REVIEW. Text in [SQUARE BRACKETS] must be filled in or confirmed by [COMPANY NAME]'s counsel before publishing. This draft describes what the product actually does as built on 2026-10-07.
+
+## Who we are
+
+SanchiJawab is operated by [COMPANY LEGAL NAME], [REGISTERED ADDRESS] ("we", "us"). We provide an AI chat assistant that businesses ("customers") add to their own websites. This policy covers two groups: customers who use our dashboard, and the visitors who chat with a customer's assistant. For visitor conversations the customer decides why and how the data is used (the "data fiduciary" under India's DPDP Act, or "controller" under GDPR) and we process it on their behalf (the "data processor"). Our Data Processing Addendum sets this out.
+
+## What we collect from customers
+
+Account details: name, work email, password (stored only as a salted bcrypt hash), workspace and business name, and team members' emails and roles. Content you give us to learn from: pages we crawl from your website and files you upload (PDF, Word, PowerPoint, Excel, CSV, text), plus the text chunks and numeric embeddings we derive from them. Billing details: plan, orders and invoice records, and GST details you enter. Card and bank details are entered with our payment providers (Razorpay or Stripe) and are never stored by us. Technical data: IP address, browser type, and the time of sign-ins and administrative actions.
+
+## What we collect from visitors who chat
+
+Messages typed into the chat, the page address the chat was opened on, the detected language, an anonymous visitor identifier generated in the visitor's browser, any rating given, and any contact details a visitor chooses to submit in a lead form (name, email, phone). The chat shows a notice and asks for agreement before a conversation starts, if the customer has left that setting on.
+
+## How we use data
+
+To crawl and index a customer's content, generate answers from it, hand conversations to a human on the customer's team, show analytics, send notifications and transcripts the customer or visitor asks for, bill customers, secure the service, and meet legal obligations. We do not sell personal data. [CONFIRM: we do not use customer content or conversations to train any AI model, and our AI provider's terms for our plan say the same. Counsel to verify Google's current Gemini API data-use terms for our account type.]
+
+## Who we share data with (sub-processors)
+
+Google (Gemini API) generates answers: it receives the visitor's question, recent conversation turns, and the excerpts of the customer's content used to answer. Langfuse records AI request traces for quality and debugging, which can include those same questions and excerpts. [HOSTING PROVIDER, REGION] hosts the application and database. [EMAIL PROVIDER] sends verification, invitation and notification emails. Razorpay and Stripe process payments. Sentry may receive error reports. [Cohere, only if the optional reranking feature is turned on: receives the question and candidate excerpts.] Customers may also connect their own CRM or Slack webhook, in which case lead and handoff details are sent to the customer's chosen service. [Counsel to confirm the final list and each provider's location before publishing.]
+
+## Where data is stored and for how long
+
+Data is stored in [REGION / COUNTRY]. Customers choose how long visitor conversations are kept: each assistant has a retention setting that automatically deletes older conversations, messages and leads. A customer can also export or permanently erase everything stored about one visitor, and deleting an assistant or workspace removes its indexed content and conversation history. Backups are kept for [BACKUP PERIOD]. Administrative-action records are kept for [AUDIT LOG PERIOD].
+
+## Security
+
+Each customer's data is separated from every other customer's and this is covered by automated tests. Passwords are hashed, payment-gateway secrets are encrypted at rest, sign-in and public chat endpoints are rate limited, and the crawler and webhooks are blocked from reaching internal network addresses. Platform staff changes to plans, content and customer accounts are recorded in an audit log. No system is perfectly secure; we will tell affected customers and, where required, regulators, of a breach without undue delay [and within 72 hours where GDPR applies].
+
+## Your rights
+
+Under India's Digital Personal Data Protection Act 2023 and, where it applies, the GDPR, you may ask to access, correct, export or erase your personal data and withdraw consent. Visitors should first contact the business whose website they chatted on, which controls their data. For data we control, such as customer account data, write to [PRIVACY CONTACT EMAIL]. [Grievance Officer name and contact, as required by Indian law.] You may also complain to the Data Protection Board of India or your local supervisory authority.
+
+## Cookies and local storage
+
+The chat widget stores a visitor identifier and the current conversation in the visitor's browser so a conversation continues across pages. Our website and dashboard use cookies and local storage needed for sign-in and preferences. [Describe analytics cookies if any are added.]
+
+## Children
+
+The service is not directed at children under [AGE]. [Counsel to confirm the age threshold and any verifiable-parental-consent obligations.]
+
+## Changes and contact
+
+We will post changes here and, for material changes, notify customers by email. Questions: [PRIVACY CONTACT EMAIL].
