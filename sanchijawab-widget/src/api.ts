@@ -124,6 +124,24 @@ export async function submitLead(
   }
 }
 
+export async function submitCsat(
+  apiBase: string,
+  botId: string,
+  conversationId: string,
+  rating: number,
+): Promise<boolean> {
+  try {
+    const resp = await fetch(`${apiBase}/public/w/${botId}/conversations/${conversationId}/csat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function emailTranscript(
   apiBase: string,
   botId: string,

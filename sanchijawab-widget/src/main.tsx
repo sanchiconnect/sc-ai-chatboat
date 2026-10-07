@@ -1,11 +1,46 @@
 import { render } from "preact";
-import { Widget } from "./Widget";
+import { Widget, type WidgetController } from "./Widget";
 import cssText from "./styles.css?inline";
 
 // document.currentScript is only valid during this script's own synchronous
 // execution — captured here, at module top level, since boot() may run
 // later (after DOMContentLoaded) when it would already be null.
 const scriptEl = document.currentScript as HTMLScriptElement | null;
+
+// JS API (FR-I4) — SanchiJawab.open()/close()/identify() work from the
+// moment the script tag is parsed, even though boot() hasn't finished its
+// async config fetch yet: calls made before the real Widget mounts just
+// queue up and replay once it's ready, same pattern most chat-widget SDKs
+// use (Intercom, Crisp, etc.) so a host page's own script never has to
+// wait for us.
+type QueuedCall = { method: keyof WidgetController; arg?: unknown };
+const callQueue: QueuedCall[] = [];
+
+function installQueueShim() {
+  const w = window as unknown as { SanchiJawab?: Record<string, (...a: unknown[]) => void> };
+  if (w.SanchiJawab && (w.SanchiJawab as { _sjReal?: boolean })._sjReal) return;
+  w.SanchiJawab = {
+    open: () => callQueue.push({ method: "open" }),
+    close: () => callQueue.push({ method: "close" }),
+    identify: (info: unknown) => callQueue.push({ method: "identify", arg: info }),
+  };
+}
+installQueueShim();
+
+function installRealController(controller: WidgetController) {
+  const real = {
+    open: controller.open,
+    close: controller.close,
+    identify: (info: { name?: string; email?: string }) => controller.identify(info),
+    _sjReal: true,
+  };
+  (window as unknown as { SanchiJawab: typeof real }).SanchiJawab = real;
+  for (const call of callQueue.splice(0)) {
+    if (call.method === "identify") controller.identify((call.arg as { name?: string; email?: string }) || {});
+    else if (call.method === "open") controller.open();
+    else if (call.method === "close") controller.close();
+  }
+}
 
 interface RemoteConfig {
   business_name: string;
@@ -120,6 +155,7 @@ async function boot() {
       hideBranding={remote?.hide_branding ?? false}
       locale={remote?.locale || ds.locale || "en"}
       theme={remote?.theme === "dark" ? "dark" : "light"}
+      onReady={installRealController}
     />,
     mount,
   );

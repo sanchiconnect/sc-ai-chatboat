@@ -13,6 +13,8 @@ type Summary = {
   resolution_rate: number | null;
   leads_count: number;
   message_satisfaction_rate: number | null;
+  csat_average: number | null;
+  csat_count: number;
   top_questions: { question: string; count: number }[];
 };
 
@@ -75,6 +77,10 @@ export default function AnalyticsPage() {
               { label: "Handoffs", value: summary.handoff_count },
               { label: "Leads captured", value: summary.leads_count },
               { label: "Message satisfaction*", value: pct(summary.message_satisfaction_rate) },
+              {
+                label: `CSAT (post-chat)${summary.csat_count ? ` — ${summary.csat_count}` : ""}`,
+                value: summary.csat_average === null ? "—" : `${summary.csat_average.toFixed(1)} / 5`,
+              },
               { label: "Crawl success rate", value: crawlSuccess ? pct(crawlSuccess.success_rate) : "—" },
             ].map((card) => (
               <div key={card.label} className="border border-border rounded-lg p-3">
@@ -84,7 +90,8 @@ export default function AnalyticsPage() {
             ))}
           </div>
           <p className="text-xs text-fg-faint -mt-4 mb-6">
-            *From visitor thumbs up/down on individual answers — not a post-chat CSAT survey (not built).
+            *From visitor thumbs up/down on individual answers — a finer-grained, per-answer signal distinct from
+            the post-chat CSAT survey.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

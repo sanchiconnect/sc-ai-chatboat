@@ -1649,6 +1649,39 @@ async def email_transcript(bot_id: str, body: EmailTranscriptRequest, request: R
     return {"sent": sent}
 
 
+class CsatRequest(BaseModel):
+    rating: int
+
+    @field_validator("rating")
+    @classmethod
+    def _rating_in_range(cls, v: int) -> int:
+        if not 1 <= v <= 5:
+            raise ValueError("rating must be between 1 and 5")
+        return v
+
+
+@app.post("/public/w/{bot_id}/conversations/{conversation_id}/csat")
+async def submit_csat(bot_id: str, conversation_id: str, body: CsatRequest, request: Request):
+    """Real post-chat CSAT survey (FR-R1/R2's analytics previously only had
+    message-level thumbs up/down as a proxy for this). One rating per
+    conversation — a second submission is silently ignored rather than
+    overwriting the first, same spirit as a one-time survey prompt."""
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        _enforce_domain_allowlist(bot, request)
+
+        conv = await session.get(Conversation, conversation_id)
+        if conv is None or conv.bot_id != bot_id:
+            raise HTTPException(404, "Conversation not found")
+
+        if conv.rating is None:
+            conv.rating = body.rating
+            await session.commit()
+        return {"rating": conv.rating}
+
+
 # ─── Inbox (FR-H1) — dashboard-side, auth required ───────────────────────
 
 
@@ -1835,6 +1868,7 @@ async def analytics_summary(bot_id: str, days: int = 30, user: CurrentUser = Dep
         ]
 
         rated_total = rated_up + rated_down
+        csat_ratings = [c.rating for c in convs if c.rating is not None]
         return {
             "days": days,
             "total_conversations": total_conversations,
@@ -1842,9 +1876,14 @@ async def analytics_summary(bot_id: str, days: int = 30, user: CurrentUser = Dep
             "handoff_count": handoff_count,
             "resolution_rate": resolution_rate,
             "leads_count": leads_count,
-            # Proxy from message thumbs up/down, not a real post-chat CSAT
-            # survey — no such survey is built. Null when nothing's rated yet.
+            # Message-level thumbs up/down — a finer-grained, per-answer
+            # signal, distinct from (not a substitute for) the real
+            # post-chat CSAT survey below.
             "message_satisfaction_rate": (rated_up / rated_total) if rated_total else None,
+            # Real post-chat CSAT (Conversation.rating, 1-5) — collected by
+            # the widget's own end-of-chat prompt, not a proxy.
+            "csat_average": (sum(csat_ratings) / len(csat_ratings)) if csat_ratings else None,
+            "csat_count": len(csat_ratings),
             "top_questions": top_questions,
         }
 

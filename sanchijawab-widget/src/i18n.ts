@@ -25,6 +25,9 @@ export interface WidgetStrings {
   emailTranscriptSend: string;
   emailTranscriptSent: string;
   emailTranscriptFailed: string;
+  csatPrompt: string;
+  csatSkip: string;
+  csatThanks: string;
 }
 
 const EN: WidgetStrings = {
@@ -54,6 +57,9 @@ const EN: WidgetStrings = {
   emailTranscriptSend: "Send",
   emailTranscriptSent: "Sent! Check your inbox.",
   emailTranscriptFailed: "Couldn't send that — try again?",
+  csatPrompt: "How was this conversation?",
+  csatSkip: "Skip",
+  csatThanks: "Thanks for the feedback!",
 };
 
 // Widget UI chrome only (FR-W8) — the bot's own answers already reply in
@@ -86,6 +92,9 @@ const HI: WidgetStrings = {
   emailTranscriptSend: "भेजें",
   emailTranscriptSent: "भेज दिया! अपना इनबॉक्स देखें।",
   emailTranscriptFailed: "भेज नहीं सके — फिर कोशिश करें?",
+  csatPrompt: "यह बातचीत कैसी रही?",
+  csatSkip: "छोड़ें",
+  csatThanks: "प्रतिक्रिया के लिए धन्यवाद!",
 };
 
 const LOCALES: Record<string, WidgetStrings> = { en: EN, hi: HI };

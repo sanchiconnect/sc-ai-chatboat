@@ -357,6 +357,7 @@ export const api = {
     request<{
       days: number; total_conversations: number; total_messages: number; handoff_count: number;
       resolution_rate: number | null; leads_count: number; message_satisfaction_rate: number | null;
+      csat_average: number | null; csat_count: number;
       top_questions: { question: string; count: number }[];
     }>(`/v1/bots/${botId}/analytics/summary?days=${days}`),
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { streamChat, pollMessages, submitLead, rateMessage, emailTranscript, type ChatHistoryTurn } from "./api";
+import { streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, type ChatHistoryTurn } from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
 import { stringsFor, type WidgetStrings } from "./i18n";
@@ -21,6 +21,13 @@ export interface WidgetProps {
   hideBranding: boolean;
   locale: string;
   theme: "light" | "dark";
+  onReady?: (controller: WidgetController) => void;
+}
+
+export interface WidgetController {
+  open: () => void;
+  close: () => void;
+  identify: (info: { name?: string; email?: string }) => void;
 }
 
 interface Message {
@@ -112,6 +119,25 @@ function saveConsent(botId: string, value: "accepted" | "declined") {
   }
 }
 
+// CSAT is prompted at most once per conversation (sessionStorage, not
+// localStorage — a new conversation after a page reload should be able to
+// ask again, unlike consent which is a one-time, cross-session decision).
+function csatAlreadyHandled(botId: string, conversationId: string): boolean {
+  try {
+    return sessionStorage.getItem(STORAGE_PREFIX + botId + ":csat:" + conversationId) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markCsatHandled(botId: string, conversationId: string) {
+  try {
+    sessionStorage.setItem(STORAGE_PREFIX + botId + ":csat:" + conversationId, "1");
+  } catch {
+    // ignore — worst case, prompted again
+  }
+}
+
 function ConsentGate({
   text, primaryColor, onAccept, onDecline, t,
 }: { text: string; primaryColor: string; onAccept: () => void; onDecline: () => void; t: WidgetStrings }) {
@@ -130,9 +156,16 @@ function ConsentGate({
   );
 }
 
-function LeadForm({ onSubmit, onSkip, t }: { onSubmit: (v: { name: string; email: string; phone: string }) => void; onSkip: () => void; t: WidgetStrings }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+function LeadForm({
+  onSubmit, onSkip, t, initial,
+}: {
+  onSubmit: (v: { name: string; email: string; phone: string }) => void;
+  onSkip: () => void;
+  t: WidgetStrings;
+  initial?: { name?: string; email?: string };
+}) {
+  const [name, setName] = useState(initial?.name || "");
+  const [email, setEmail] = useState(initial?.email || "");
   const [phone, setPhone] = useState("");
   return (
     <form
@@ -166,9 +199,39 @@ export function Widget(props: WidgetProps) {
   const [emailFormOpen, setEmailFormOpen] = useState(false);
   const [emailValue, setEmailValue] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [showCsat, setShowCsat] = useState(false);
+  const [csatDone, setCsatDone] = useState(false);
+  const [identity, setIdentity] = useState<{ name?: string; email?: string }>({});
   const visitorIdRef = useRef<string>(getOrCreateVisitorId(props.botId));
   const lastPolledIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // JS API (FR-I4) — exposes window.SanchiJawab.open()/close()/identify()
+  // via main.tsx's queue shim, fired once so a host page's own script can
+  // control the widget without reaching into its internals.
+  useEffect(() => {
+    props.onReady?.({
+      open: () => setOpen(true),
+      close: () => setOpen(false),
+      identify: (info) => setIdentity((cur) => ({ ...cur, ...info })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function requestClose() {
+    if (conversationId && messages.length > 0 && !csatDone && !csatAlreadyHandled(props.botId, conversationId)) {
+      setShowCsat(true);
+      return;
+    }
+    setOpen(false);
+  }
+
+  function finishCsat() {
+    setShowCsat(false);
+    setCsatDone(true);
+    if (conversationId) markCsatHandled(props.botId, conversationId);
+    setOpen(false);
+  }
 
   useEffect(() => saveHistory(props.botId, messages), [messages, props.botId]);
 
@@ -316,11 +379,36 @@ export function Widget(props: WidgetProps) {
                   {"\u2709"}
                 </button>
               )}
-              <button class="sj-close" onClick={() => setOpen(false)} aria-label={t.closeChat}>
+              <button class="sj-close" onClick={requestClose} aria-label={t.closeChat}>
                 {"\u2715"}
               </button>
             </div>
           </div>
+
+          {showCsat && (
+            <div class="sj-csat">
+              <p class="sj-csat-prompt">{t.csatPrompt}</p>
+              <div class="sj-csat-scale">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    class="sj-csat-btn"
+                    aria-label={`${n} / 5`}
+                    onClick={async () => {
+                      if (conversationId) await submitCsat(props.apiBase, props.botId, conversationId, n);
+                      finishCsat();
+                    }}
+                  >
+                    {["\u{1F61E}", "\u{1F615}", "\u{1F610}", "\u{1F642}", "\u{1F604}"][n - 1]}
+                  </button>
+                ))}
+              </div>
+              <button type="button" class="sj-csat-skip" onClick={finishCsat}>
+                {t.csatSkip}
+              </button>
+            </div>
+          )}
 
           {emailFormOpen && conversationId && (
             <form
@@ -427,6 +515,7 @@ export function Widget(props: WidgetProps) {
                     }}
                     onSkip={() => setLeadSubmitted(true)}
                     t={t}
+                    initial={identity}
                   />
                 )}
                 {m.role === "bot" && !m.pending && i === messages.length - 1 && m.followUps && m.followUps.length > 0 && !handedOff && (
@@ -502,7 +591,7 @@ export function Widget(props: WidgetProps) {
       <button
         class="sj-launcher"
         style={{ background: open ? props.primaryColor : "transparent" }}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? requestClose() : setOpen(true))}
         aria-label={open ? t.closeChat : t.openChat}
       >
         {open ? <span class="sj-launcher-close">{"\u2715"}</span> : <BotAvatar avatarId={props.avatarId} size={56} />}
