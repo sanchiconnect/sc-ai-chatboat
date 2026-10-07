@@ -48,7 +48,11 @@ class Settings(BaseSettings):
     # Embeddings
     embed_provider: str = "fastembed"
     embed_dim: int = 384
+    # Optional rerank step (FR-C hybrid retrieval): retrieve 30, rerank to
+    # top_k. Off when cohere_api_key is empty.
     cohere_api_key: str = ""
+    cohere_rerank_model: str = "rerank-v3.5"
+    rerank_candidates: int = 30
 
     # LLM — single key slot, same convention as app/poc/ask.py
     default_provider: str = "google"

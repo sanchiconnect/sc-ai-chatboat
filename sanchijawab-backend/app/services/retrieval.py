@@ -9,9 +9,34 @@ from __future__ import annotations
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
+from ..config import settings
 from ..models import Chunk, Document, Source
 from .embeddings import embed_one
 from .tracing import get_langfuse
+
+log = logging.getLogger(__name__)
+
+
+async def _rerank(query: str, candidates: list[dict], top_k: int) -> tuple[list[dict], bool]:
+    """Cohere rerank of the fused candidates. Any failure falls back to the
+    fused order truncated to top_k — rerank is an accuracy boost, never a
+    reason for a chat request to fail."""
+    try:
+        import cohere
+
+        client = cohere.AsyncClient(api_key=settings.cohere_api_key)
+        resp = await client.rerank(
+            model=settings.cohere_rerank_model,
+            query=query,
+            documents=[c["text"] for c in candidates],
+            top_n=top_k,
+        )
+        return [candidates[r.index] for r in resp.results], True
+    except Exception:
+        log.warning("cohere rerank failed; using fused order", exc_info=True)
+        return candidates[:top_k], False
 
 
 async def hybrid_search(
@@ -26,6 +51,7 @@ async def hybrid_search(
     with get_langfuse().start_as_current_observation(
         as_type="retriever", name="hybrid-search", input=query,
     ) as span:
+        rerank_enabled = bool(settings.cohere_api_key)
         query_vector = embed_one(query)
 
         vector_score = (1 - Chunk.embedding.cosine_distance(query_vector)).label("vector_score")
@@ -43,18 +69,21 @@ async def hybrid_search(
             .join(Source, Document.source_id == Source.id)
             .where(Chunk.tenant_id == tenant_id, Chunk.bot_id == bot_id, Chunk.visibility == visibility)
             .order_by((vector_score + text_score + qa_boost).desc())
-            .limit(top_k)
+            .limit(settings.rerank_candidates if rerank_enabled else top_k)
         )
         rows = (await session.execute(stmt)).all()
         results = [
             {"chunk_id": chunk_id, "text": text, "url": url, "vector_score": vscore, "text_score": tscore}
             for chunk_id, text, url, vscore, tscore in rows
         ]
+        reranked = False
+        if rerank_enabled and len(results) > top_k:
+            results, reranked = await _rerank(query, results, top_k)
         span.update(
             output=[
                 {"chunk_id": r["chunk_id"], "url": r["url"], "vector_score": r["vector_score"], "text_score": r["text_score"]}
                 for r in results
             ],
-            metadata={"top_k": top_k, "results_count": len(results)},
+            metadata={"top_k": top_k, "results_count": len(results), "reranked": reranked},
         )
         return results
