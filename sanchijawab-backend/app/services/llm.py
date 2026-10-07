@@ -250,18 +250,30 @@ async def suggest_follow_ups(question: str, answer: str) -> list[str]:
         return follow_ups
 
 
+MODEL_TIERS = {
+    "economy": "gemini_model_economy",
+    "balanced": "gemini_model",
+    "quality": "gemini_model_quality",
+}
+
+
+def _model_for_tier(model_tier: str) -> str:
+    return getattr(settings, MODEL_TIERS.get(model_tier, "gemini_model"), settings.gemini_model)
+
+
 async def stream_answer(
     business: str, language: str, question: str, knowledge: str,
-    persona: str = "", instructions: str = "", summary: str = "",
+    persona: str = "", instructions: str = "", summary: str = "", model_tier: str = "balanced",
 ) -> AsyncIterator[str]:
     system = _build_answer_system(business, language, persona, instructions)
     summary_block = f"Summary of earlier conversation: {summary}\n\n" if summary else ""
     content = f"{summary_block}<knowledge>\n{knowledge}\n</knowledge>\n\nQuestion: {question}"
+    model = _model_for_tier(model_tier)
 
     with get_langfuse().start_as_current_observation(
         as_type="generation",
         name="stream-answer",
-        model=settings.gemini_model,
+        model=model,
         input=[
             {"role": "system", "content": system},
             {"role": "user", "content": content},
@@ -274,7 +286,7 @@ async def stream_answer(
             yielded_any = False
             try:
                 stream = await _client().aio.models.generate_content_stream(
-                    model=settings.gemini_model,
+                    model=model,
                     contents=content,
                     config={
                         "system_instruction": system, "max_output_tokens": 800,

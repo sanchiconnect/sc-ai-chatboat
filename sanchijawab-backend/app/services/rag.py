@@ -71,6 +71,7 @@ async def answer_stream(
     persona = bot.persona if bot else ""
     instructions = bot.instructions if bot else ""
     keywords = _keyword_list(bot.handoff_keywords if bot else "")
+    model_tier = bot.model_tier if bot else "balanced"
 
     with get_langfuse().start_as_current_observation(
         name="chat-answer", as_type="span", input=message,
@@ -116,7 +117,7 @@ async def answer_stream(
             # Skip retrieval entirely and answer from the greeting-exception
             # in ANSWER_SYSTEM, with no knowledge block and no citations.
             full_text = ""
-            async for delta in llm.stream_answer(business_name, language, message, "", persona, instructions, summary_context):
+            async for delta in llm.stream_answer(business_name, language, message, "", persona, instructions, summary_context, model_tier):
                 full_text += delta
                 yield {"type": "delta", "text": delta}
 
@@ -158,7 +159,7 @@ async def answer_stream(
         knowledge = "\n".join(f"[{i}] ({c.get('url') or 'source'}) {c['text']}" for i, c in enumerate(chunks, 1))
 
         full_text = ""
-        async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions, summary_context):
+        async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions, summary_context, model_tier):
             full_text += delta
             yield {"type": "delta", "text": delta}
 

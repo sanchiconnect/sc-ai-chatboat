@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     default_provider: str = "google"
     cloud_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    # Per-bot model choice (FR-C9, Should) — gemini_model above is the
+    # "balanced" default; these two give Bot.model_tier something real to
+    # switch between. Fast-tier calls (fast_analyze, suggest_follow_ups)
+    # deliberately always use gemini_model regardless of a bot's own tier —
+    # only the final streamed answer is worth paying more/less for.
+    gemini_model_economy: str = "gemini-2.5-flash-lite"
+    gemini_model_quality: str = "gemini-2.5-pro"
 
     # Crawling
     max_pages_per_site: int = 5000
