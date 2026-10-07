@@ -6,6 +6,7 @@ export interface ChatEvent {
   conversation_id?: string;
   handed_off?: boolean;
   message_id?: string;
+  follow_ups?: string[];
 }
 
 export interface ChatHistoryTurn {

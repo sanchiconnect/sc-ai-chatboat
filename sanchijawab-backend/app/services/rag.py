@@ -120,8 +120,8 @@ async def answer_stream(
                 full_text += delta
                 yield {"type": "delta", "text": delta}
 
-            root_span.update(output={"text": full_text, "no_answer": False, "sources": []})
-            yield {"type": "done", "no_answer": False, "sources": []}
+            root_span.update(output={"text": full_text, "no_answer": False, "sources": [], "follow_ups": []})
+            yield {"type": "done", "no_answer": False, "sources": [], "follow_ups": []}
             return
 
         chunks = await retrieval.hybrid_search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
@@ -144,9 +144,9 @@ async def answer_stream(
                 await session.commit()
 
             text = "I don't have information about that yet. I can connect you with the team if you'd like."
-            root_span.update(output={"text": text, "no_answer": True, "sources": []})
+            root_span.update(output={"text": text, "no_answer": True, "sources": [], "follow_ups": []})
             yield {"type": "delta", "text": text}
-            yield {"type": "done", "no_answer": True, "sources": []}
+            yield {"type": "done", "no_answer": True, "sources": [], "follow_ups": []}
             return
 
         if conversation_id:
@@ -164,6 +164,7 @@ async def answer_stream(
 
         declined = _is_decline(full_text)
         sources: list[dict] = []
+        follow_ups: list[str] = []
         if not declined:
             seen: set[str] = set()
             for c in chunks:
@@ -171,6 +172,10 @@ async def answer_stream(
                 if url and url not in seen:
                     seen.add(url)
                     sources.append({"url": url, "chunk_id": c["chunk_id"]})
+            # Follow-up quick replies (SAN-1096, FR-C8) — only worth
+            # suggesting more questions when this one actually got a real,
+            # grounded answer; a decline has nothing to follow up on.
+            follow_ups = await llm.suggest_follow_ups(message, full_text)
 
-        root_span.update(output={"text": full_text, "no_answer": declined, "sources": sources})
-        yield {"type": "done", "no_answer": declined, "sources": sources}
+        root_span.update(output={"text": full_text, "no_answer": declined, "sources": sources, "follow_ups": follow_ups})
+        yield {"type": "done", "no_answer": declined, "sources": sources, "follow_ups": follow_ups}

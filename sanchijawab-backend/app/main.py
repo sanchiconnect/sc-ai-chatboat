@@ -783,6 +783,7 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
             "offsets": config.offsets_json or DEFAULT_WIDGET_OFFSETS,
             "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": config.hidden_paths_json or [],
+            "starter_questions": config.starter_questions_json or [],
         }
 
 
@@ -799,6 +800,7 @@ class UpdateWidgetConfigRequest(BaseModel):
     desktop_enabled: bool | None = None
     mobile_enabled: bool | None = None
     hidden_paths: list[str] | None = None
+    starter_questions: list[str] | None = None
 
 
 @app.put("/v1/bots/{bot_id}/widget-config")
@@ -848,6 +850,8 @@ async def update_widget_config(
             config.devices_json = devices
         if body.hidden_paths is not None:
             config.hidden_paths_json = [p.strip() for p in body.hidden_paths if p.strip()]
+        if body.starter_questions is not None:
+            config.starter_questions_json = [q.strip() for q in body.starter_questions if q.strip()]
 
         await session.commit()
         return {
@@ -858,6 +862,7 @@ async def update_widget_config(
             "offsets": config.offsets_json or DEFAULT_WIDGET_OFFSETS,
             "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": config.hidden_paths_json or [],
+            "starter_questions": config.starter_questions_json or [],
         }
 
 
@@ -1359,6 +1364,7 @@ async def public_widget_config(bot_id: str, request: Request):
             "offsets": (config.offsets_json if config else None) or DEFAULT_WIDGET_OFFSETS,
             "devices": (config.devices_json if config else None) or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": (config.hidden_paths_json if config else None) or [],
+            "starter_questions": (config.starter_questions_json if config else None) or [],
         }
 
 

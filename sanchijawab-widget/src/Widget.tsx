@@ -16,6 +16,7 @@ export interface WidgetProps {
   position: "left" | "right";
   offsetX: number;
   offsetY: number;
+  starterQuestions: string[];
 }
 
 interface Message {
@@ -26,6 +27,7 @@ interface Message {
   leadForm?: boolean;
   messageId?: string;
   rated?: 1 | -1;
+  followUps?: string[];
 }
 
 function downloadTranscript(botId: string, messages: Message[]) {
@@ -240,7 +242,7 @@ export function Widget(props: WidgetProps) {
           setMessages((m) => {
             const next = [...m];
             const last = next[next.length - 1];
-            next[next.length - 1] = { ...last, pending: false, sources: event.sources };
+            next[next.length - 1] = { ...last, pending: false, sources: event.sources, followUps: event.follow_ups };
             return next;
           });
           if (event.handed_off) setHandedOff(true);
@@ -300,7 +302,20 @@ export function Widget(props: WidgetProps) {
           </div>
 
           <div class="sj-messages" ref={listRef}>
-            {messages.length === 0 && <div class="sj-bubble sj-bubble-bot">{props.welcomeMessage}</div>}
+            {messages.length === 0 && (
+              <>
+                <div class="sj-bubble sj-bubble-bot">{props.welcomeMessage}</div>
+                {props.starterQuestions.length > 0 && (
+                  <div class="sj-chips">
+                    {props.starterQuestions.map((q, i) => (
+                      <button key={i} type="button" class="sj-chip" onClick={() => send(q)} disabled={consentBlocking}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
             {messages.map((m, i) => (
               <div key={i} class={`sj-bubble sj-bubble-${m.role}`}>
                 {m.role === "agent" && <div class="sj-agent-label">Agent</div>}
@@ -364,6 +379,15 @@ export function Widget(props: WidgetProps) {
                     }}
                     onSkip={() => setLeadSubmitted(true)}
                   />
+                )}
+                {m.role === "bot" && !m.pending && i === messages.length - 1 && m.followUps && m.followUps.length > 0 && !handedOff && (
+                  <div class="sj-chips">
+                    {m.followUps.map((q, j) => (
+                      <button key={j} type="button" class="sj-chip" onClick={() => send(q)} disabled={sending || consentBlocking}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}

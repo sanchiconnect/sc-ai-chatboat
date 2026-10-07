@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from ..config import settings
@@ -23,12 +24,14 @@ from .tracing import get_langfuse
 
 logger = logging.getLogger("sanchijawab.llm")
 
-# A transient network hiccup to Gemini (seen for real: httpx.ReadTimeout mid
-# request) used to propagate as an unhandled exception straight through
-# FastAPI's StreamingResponse, killing the connection with no retry and no
-# message to the visitor. These are the exception types worth retrying —
-# genai's client raises plain httpx errors, not its own wrapped type.
-RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)
+# A transient hiccup to Gemini (seen for real: httpx.ReadTimeout mid
+# request, and separately a genai ServerError 503 UNAVAILABLE) used to
+# propagate as an unhandled exception straight through FastAPI's
+# StreamingResponse, killing the connection with no retry and no message
+# to the visitor. ServerError (5xx) is worth retrying the same as a network
+# error; ClientError (4xx) is deliberately excluded — that's a real request
+# problem (bad key, malformed call) retrying won't fix.
+RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError, genai_errors.ServerError)
 MAX_ATTEMPTS = 3
 
 # Output moderation (SAN-1128) — explicit rather than relying on whatever
@@ -64,6 +67,13 @@ a JSON object with these fields, nothing else:
  "negative_sentiment": <true if the visitor's message expresses real frustration,
  anger, or strong dissatisfaction (not just a neutral or mildly negative question) —
  false otherwise>}"""
+
+FOLLOW_UP_SYSTEM = """Given a visitor's question and the answer just given, suggest up to 3
+short, natural follow-up questions this visitor might reasonably ask next — things the
+<knowledge> used for the answer would plausibly also cover, not generic chit-chat.
+Output ONLY a JSON object: {"follow_ups": ["<question 1>", "<question 2>", "<question 3>"]}.
+Use fewer than 3 if you can't think of good ones; use an empty list if none fit. Each
+question under 60 characters, in the same language as the answer."""
 
 SUMMARY_SYSTEM = """Update a running summary of a conversation between a website
 visitor and a support assistant. You are given the existing summary (if any) and
@@ -206,6 +216,38 @@ async def summarize_history(old_summary: str, new_messages: list[dict]) -> str:
 
         generation.update(output=summary, usage_details=_usage_details(resp))
         return summary
+
+
+async def suggest_follow_ups(question: str, answer: str) -> list[str]:
+    """Best-effort only (SAN-1096, FR-C8) — called after an answer has
+    already been fully streamed to the visitor, so a failure here just
+    means no follow-up chips show, never a retry or a visible error."""
+    prompt = f"Question: {question}\n\nAnswer: {answer}"
+
+    with get_langfuse().start_as_current_observation(
+        as_type="generation",
+        name="suggest-follow-ups",
+        model=settings.gemini_model,
+        input=[
+            {"role": "system", "content": FOLLOW_UP_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+    ) as generation:
+        try:
+            resp = await _client().aio.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config={"system_instruction": FOLLOW_UP_SYSTEM, "response_mime_type": "application/json"},
+            )
+            result = json.loads(resp.text)
+            follow_ups = [q for q in result.get("follow_ups", []) if isinstance(q, str) and q.strip()][:3]
+        except (RETRYABLE_EXCEPTIONS, json.JSONDecodeError, TypeError, AttributeError) as exc:
+            logger.warning("suggest_follow_ups failed or unparseable: %r", exc)
+            generation.update(output=[], level="WARNING", status_message="Follow-up suggestion failed or unparseable")
+            return []
+
+        generation.update(output=follow_ups, usage_details=_usage_details(resp))
+        return follow_ups
 
 
 async def stream_answer(

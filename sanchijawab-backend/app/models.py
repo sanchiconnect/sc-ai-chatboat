@@ -340,6 +340,11 @@ class WidgetConfig(Base):
     offsets_json: Mapped[dict] = mapped_column(JSON, default=dict)
     devices_json: Mapped[dict] = mapped_column(JSON, default=lambda: {"desktop": True, "mobile": True})
     hidden_paths_json: Mapped[list] = mapped_column(JSON, default=list)
+    # Shown as tappable chips before the visitor's first message (SAN-1096,
+    # FR-C8) — a short list of questions the business owner picks, not
+    # generated. Empty means no chips, same as the widget's current
+    # behavior before this field existed.
+    starter_questions_json: Mapped[list] = mapped_column(JSON, default=list)
     consent_text: Mapped[str] = mapped_column(Text, default="")
     require_consent: Mapped[bool] = mapped_column(Boolean, default=True)
     locale: Mapped[str] = mapped_column(String(16), default="en")

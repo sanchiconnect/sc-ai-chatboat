@@ -19,6 +19,7 @@ interface RemoteConfig {
   offsets?: { x: number; y: number };
   devices?: { desktop: boolean; mobile: boolean };
   hidden_paths?: string[];
+  starter_questions?: string[];
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -112,6 +113,7 @@ async function boot() {
       position={remote?.position === "left" ? "left" : "right"}
       offsetX={remote?.offsets?.x ?? 20}
       offsetY={remote?.offsets?.y ?? 20}
+      starterQuestions={remote?.starter_questions || []}
     />,
     mount,
   );

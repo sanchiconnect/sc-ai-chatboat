@@ -19,6 +19,7 @@ export default function WidgetSettingsPage() {
   const [desktopEnabled, setDesktopEnabled] = useState(true);
   const [mobileEnabled, setMobileEnabled] = useState(true);
   const [hiddenPaths, setHiddenPaths] = useState("");
+  const [starterQuestions, setStarterQuestions] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,6 +40,7 @@ export default function WidgetSettingsPage() {
         setDesktopEnabled(cfg.devices?.desktop ?? true);
         setMobileEnabled(cfg.devices?.mobile ?? true);
         setHiddenPaths((cfg.hidden_paths || []).join("\n"));
+        setStarterQuestions((cfg.starter_questions || []).join("\n"));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -56,6 +58,7 @@ export default function WidgetSettingsPage() {
         offset_x: offsetX, offset_y: offsetY,
         desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
         hidden_paths: hiddenPaths.split(/[\n,]+/).map((p) => p.trim()).filter(Boolean),
+        starter_questions: starterQuestions.split("\n").map((q) => q.trim()).filter(Boolean),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -117,6 +120,21 @@ export default function WidgetSettingsPage() {
             value={welcome}
             onChange={(e) => setWelcome(e.target.value)}
             placeholder="Hi! Ask me anything."
+          />
+        </div>
+
+        <div>
+          <label htmlFor="widget-starter-questions" className="text-sm font-medium">Starter questions</label>
+          <p className="text-xs text-fg-muted mb-1">
+            One per line. Shown as tappable suggestions before the visitor sends their first message. Leave blank
+            for none.
+          </p>
+          <textarea
+            id="widget-starter-questions"
+            className="w-full border border-border rounded-lg px-3 py-2 h-24 text-sm"
+            placeholder={"What are your business hours?\nHow do I reset my password?\nDo you offer refunds?"}
+            value={starterQuestions}
+            onChange={(e) => setStarterQuestions(e.target.value)}
           />
         </div>
 

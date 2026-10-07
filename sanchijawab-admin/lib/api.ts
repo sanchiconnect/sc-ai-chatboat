@@ -312,7 +312,7 @@ export const api = {
       texts: { welcome?: string; header?: string };
       consent_text: string; require_consent: boolean;
       offsets: { x: number; y: number }; devices: { desktop: boolean; mobile: boolean };
-      hidden_paths: string[];
+      hidden_paths: string[]; starter_questions: string[];
     }>(`/v1/bots/${botId}/widget-config`),
 
   updateWidgetConfig: (
@@ -321,14 +321,14 @@ export const api = {
       primary_color: string; theme: string; position: string; welcome: string; header: string;
       consent_text: string; require_consent: boolean;
       offset_x: number; offset_y: number; desktop_enabled: boolean; mobile_enabled: boolean;
-      hidden_paths: string[];
+      hidden_paths: string[]; starter_questions: string[];
     }>,
   ) =>
     request<{
       primary_color: string; theme: string; position: string; texts: Record<string, string>;
       consent_text: string; require_consent: boolean;
       offsets: { x: number; y: number }; devices: { desktop: boolean; mobile: boolean };
-      hidden_paths: string[];
+      hidden_paths: string[]; starter_questions: string[];
     }>(`/v1/bots/${botId}/widget-config`, { method: "PUT", body: JSON.stringify(body) }),
 
   listConversations: (botId: string, status?: string) =>

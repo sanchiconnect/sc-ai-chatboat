@@ -233,6 +233,33 @@
   color: #3d46c9;
 }
 
+.sj-chips {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sj-chip {
+  border: 1px solid #d9d9e0;
+  background: #fff;
+  color: #333;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sj-chip:hover {
+  background: #f5f5f8;
+}
+
+.sj-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .sj-consent-gate {
   padding: 10px 12px;
   border-top: 1px solid #e5e5e8;
