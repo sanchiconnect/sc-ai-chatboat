@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import html
 import json
+import logging
 import re
 import uuid
 from collections import Counter
@@ -41,7 +42,7 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    BillingProfile, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
+    AuditLog, BillingProfile, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, privacy, storage
@@ -76,6 +77,8 @@ from .services.plan_limits import (
 )
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
+from .services.platform_settings import SETTINGS as PLATFORM_SETTINGS
+from .services.platform_settings import all_settings, get_setting, set_setting
 from .services.ratelimit import rate_limit
 from .services.urlsafety import UnsafeURLError, assert_public_url
 from .services.routing import is_within_business_hours, route_team
@@ -104,6 +107,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Audit log of super admin actions (SAN-1778) ─────────────────────────
+# Records every successful write under the platform-admin routes — who, which
+# route, when — without ever reading request bodies (they can hold passwords
+# or gateway secrets). A logging failure must never break the real request.
+
+_AUDITED_PREFIXES = ("/v1/staff/", "/v1/plans", "/v1/billing/", "/v1/content/")
+_AUDIT_SKIP = {"/v1/staff/login"}
+
+
+@app.middleware("http")
+async def audit_super_admin_actions(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if (
+        request.method in ("POST", "PUT", "PATCH", "DELETE")
+        and path.startswith(_AUDITED_PREFIXES)
+        and path not in _AUDIT_SKIP
+        and response.status_code < 400
+    ):
+        try:
+            token = request.headers.get("authorization", "").removeprefix("Bearer ")
+            payload = decode_token(token, "staff_access") or decode_token(token, "access") or {}
+            async with SessionLocal() as session:
+                actor = await session.get(User, payload["sub"]) if payload.get("sub") else None
+                session.add(AuditLog(
+                    actor_id=actor.id if actor else "", actor_email=actor.email if actor else "",
+                    method=request.method, path=path[:512], status_code=response.status_code,
+                    ip=(request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                        or (request.client.host if request.client else ""))[:64],
+                ))
+                await session.commit()
+        except Exception:
+            logging.getLogger("sanchijawab.audit").warning("audit log write failed", exc_info=True)
+    return response
 
 
 # ─── Auth (FR-A1) ────────────────────────────────────────────────────────
@@ -437,7 +476,10 @@ async def create_bot(
         workspace = await session.get(Workspace, workspace_id)
         if workspace is None:
             raise HTTPException(404, "Workspace not found")
-        bot = Bot(tenant_id=workspace.tenant_id, workspace_id=workspace_id, name=body.name)
+        bot = Bot(
+            tenant_id=workspace.tenant_id, workspace_id=workspace_id, name=body.name,
+            model_tier=await get_setting("default_model_tier", session),
+        )
         session.add(bot)
         await session.commit()
         return {"bot_id": bot.id}
@@ -2599,6 +2641,43 @@ async def staff_login(body: StaffLoginRequest):
         return {"access_token": create_staff_access_token(user.id)}
 
 
+@app.get("/v1/staff/settings")
+async def staff_get_settings(_staff: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        return await all_settings(session)
+
+
+class StaffSettingRequest(BaseModel):
+    value: str
+
+
+@app.put("/v1/staff/settings/{key}")
+async def staff_put_setting(key: str, body: StaffSettingRequest, staff: User = Depends(get_current_staff_user)):
+    if key not in PLATFORM_SETTINGS:
+        raise HTTPException(404, "Unknown setting")
+    async with SessionLocal() as session:
+        try:
+            await set_setting(session, key, body.value, staff.email)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        await session.commit()
+        return await all_settings(session)
+
+
+@app.get("/v1/staff/audit-log")
+async def staff_audit_log(limit: int = 100, _staff: User = Depends(get_current_staff_user)):
+    limit = max(1, min(limit, 500))
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit))
+        ).scalars().all()
+        return [
+            {"id": r.id, "actor_email": r.actor_email, "method": r.method, "path": r.path,
+             "status_code": r.status_code, "ip": r.ip, "created_at": r.created_at.isoformat()}
+            for r in rows
+        ]
+
+
 @app.get("/v1/staff/me")
 async def staff_me(staff: User = Depends(get_current_staff_user)):
     return {"email": staff.email}
@@ -2820,7 +2899,7 @@ async def staff_update_email(target_user_id: str, body: StaffUpdateEmailRequest,
             old_email,
             "Your SanchiJawab account email was changed",
             f"<p>Your login email was changed from {old_email} to {body.email} by SanchiJawab support. "
-            f"If you didn't request this, contact {settings.support_email} immediately.</p>",
+            f"If you didn't request this, contact {await get_setting('support_email')} immediately.</p>",
         )
         return {"user_id": target_user_id, "email": target_user.email}
 
@@ -2843,7 +2922,7 @@ async def staff_reset_password(target_user_id: str, body: StaffResetPasswordRequ
             target_user.email,
             "Your SanchiJawab password was reset",
             f"<p>Your password was reset by SanchiJawab support. If you didn't request this, "
-            f"contact {settings.support_email} immediately.</p>",
+            f"contact {await get_setting('support_email')} immediately.</p>",
         )
         return {"user_id": target_user_id, "email_sent": email_sent}
 
@@ -2977,7 +3056,7 @@ async def submit_contact(body: ContactRequest):
     <p>{esc(body.message).replace(chr(10), "<br>")}</p>
     """
     subject_name = " ".join(body.name.split())[:100]  # no newlines in the header
-    email_sent = await send_email(settings.support_email, f"Contact form: {subject_name}", body_html)
+    email_sent = await send_email(await get_setting("support_email"), f"Contact form: {subject_name}", body_html)
     return {"email_sent": email_sent}
 
 

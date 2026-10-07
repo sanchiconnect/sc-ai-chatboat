@@ -444,6 +444,35 @@ class ContentPage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AuditLog(Base):
+    """Who changed what on the platform (super admin actions). Records the
+    request method + path + outcome only — never request bodies, which can
+    carry passwords or gateway secrets."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    actor_id: Mapped[str] = mapped_column(String(36), default="")
+    actor_email: Mapped[str] = mapped_column(String(255), default="")
+    method: Mapped[str] = mapped_column(String(8))
+    path: Mapped[str] = mapped_column(String(512))
+    status_code: Mapped[int] = mapped_column(Integer)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PlatformSetting(Base):
+    """Platform-wide knobs a super admin can change without a deploy. The
+    allowed keys and their validation live in services/platform_settings.py."""
+
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class PaymentGateway(Base):
     """Gateway credentials, DB-stored (not env vars) so live/test keys can be
     swapped from the dashboard without a redeploy. Secrets are Fernet-

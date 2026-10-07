@@ -39,6 +39,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return resp.json();
 }
 
+export interface StaffSetting {
+  key: string; label: string; help: string; value: string; is_default: boolean;
+}
+
+export interface StaffAuditEntry {
+  id: string; actor_email: string; method: string; path: string; status_code: number; ip: string; created_at: string;
+}
+
 export interface StaffContentInput {
   title: string; excerpt: string; body: string; read_minutes: number; published: boolean; date: string;
 }
@@ -99,6 +107,13 @@ export const staffApi = {
     }),
 
   me: () => request<{ email: string }>("/v1/staff/me"),
+
+  getSettings: () => request<StaffSetting[]>("/v1/staff/settings"),
+
+  putSetting: (key: string, value: string) =>
+    request<StaffSetting[]>(`/v1/staff/settings/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
+
+  auditLog: (limit = 100) => request<StaffAuditEntry[]>(`/v1/staff/audit-log?limit=${limit}`),
 
   listContent: () => request<StaffContentItem[]>("/v1/content"),
 

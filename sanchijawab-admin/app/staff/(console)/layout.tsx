@@ -48,6 +48,7 @@ export default function StaffConsoleLayout({ children }: { children: React.React
           <div className="flex items-center gap-3">
             <Link href="/staff" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Workspaces</Link>
             <Link href="/staff/content" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Website content</Link>
+            <Link href="/staff/settings" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Settings &amp; activity</Link>
             <span className="text-[12px] text-fg-faint hidden sm:inline">{email}</span>
             <ThemeToggle />
             <button

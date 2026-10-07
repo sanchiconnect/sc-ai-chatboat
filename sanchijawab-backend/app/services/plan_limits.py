@@ -19,14 +19,15 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .platform_settings import get_setting
 from ..models import Bot, Conversation, Document, Membership, Message, Plan, Source, Workspace
 
-TRIAL_DAYS = 14
 
 
 async def start_trial(workspace: Workspace) -> None:
     """Called once, at signup."""
-    workspace.trial_ends_at = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
+    days = int(await get_setting("trial_days"))
+    workspace.trial_ends_at = datetime.utcnow() + timedelta(days=days)
 
 
 async def _get_plan(session: AsyncSession, workspace: Workspace) -> Plan | None:
@@ -40,7 +41,7 @@ async def enforce_trial_or_plan(session: AsyncSession, workspace: Workspace) -> 
     if workspace.plan_id is not None:
         return
     if workspace.trial_ends_at and workspace.trial_ends_at < datetime.utcnow():
-        raise HTTPException(402, "Your 14-day trial has ended — upgrade to a paid plan to continue.")
+        raise HTTPException(402, "Your free trial has ended — upgrade to a paid plan to continue.")
 
 
 async def enforce_message_limit(session: AsyncSession, workspace: Workspace) -> None:
