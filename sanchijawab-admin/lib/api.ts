@@ -230,7 +230,7 @@ export const api = {
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
-      crm_webhook_url: string;
+      crm_webhook_url: string; handoff_keywords: string;
     }>(`/v1/bots/${botId}`),
 
   installCheck: (botId: string) =>
@@ -242,13 +242,13 @@ export const api = {
     botId: string,
     body: Partial<{
       name: string; persona: string; instructions: string; model_tier: string; allowed_domains: string[];
-      avatar_id: string; avatar_name: string; crm_webhook_url: string;
+      avatar_id: string; avatar_name: string; crm_webhook_url: string; handoff_keywords: string;
     }>,
   ) =>
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
-      crm_webhook_url: string;
+      crm_webhook_url: string; handoff_keywords: string;
     }>(`/v1/bots/${botId}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   getWidgetConfig: (botId: string) =>

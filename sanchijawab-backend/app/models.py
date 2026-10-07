@@ -108,6 +108,12 @@ class Bot(Base):
     # product's ecosystem already integrates with CRMs (see Make.com usage
     # elsewhere in the workspace).
     crm_webhook_url: Mapped[str] = mapped_column(String(1024), default="")
+    # Comma/newline-separated phrases (case-insensitive substring match) —
+    # deterministic escalation for things a business always wants a human
+    # on, regardless of how the LLM's own ask-for-human detection reads the
+    # phrasing (SAN-1111, FR-H2). Empty by default — these are business-
+    # specific, not something to guess a default list for.
+    handoff_keywords: Mapped[str] = mapped_column(Text, default="")
     # live|pending|draft|suspended — set by the bot's own owner (live/draft
     # via Bot settings) or by a super admin as a moderation action
     # (pending/suspended); staff changes here never touch persona/
@@ -215,6 +221,12 @@ class Conversation(Base):
     language: Mapped[str] = mapped_column(String(16), default="en")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Handoff trigger (SAN-1111, FR-H2) — counts consecutive turns in a row
+    # where retrieval found nothing at all (not "declined after generating
+    # an answer", just "no chunks to even try with"); reset to 0 the
+    # moment a turn finds something. Hitting 2 escalates instead of
+    # showing a second empty-handed reply.
+    consecutive_low_confidence: Mapped[int] = mapped_column(Integer, default=0)
     # Rolling summary of every turn older than the last 10 (SAN-1093, FR-C5)
     # — summary_msg_count is how many of the client-sent history's older
     # messages are already folded in, so a long-running conversation only

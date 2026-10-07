@@ -102,5 +102,6 @@ async def test_fast_analyze_falls_back_after_exhausting_retries(monkeypatch):
     result = await llm.fast_analyze("What's up?", [])
     assert result == {
         "standalone_query": "What's up?", "language": "en", "handoff_requested": False, "is_conversational": False,
+        "negative_sentiment": False,
     }
     assert fake.calls == llm.MAX_ATTEMPTS

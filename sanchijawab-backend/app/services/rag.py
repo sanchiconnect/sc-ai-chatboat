@@ -6,6 +6,7 @@ SSE delta without this module knowing anything about HTTP/SSE framing.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 
 from langfuse import propagate_attributes
@@ -24,6 +25,14 @@ DECLINE_MARKERS = (
 def _is_decline(text: str) -> bool:
     low = text.lower()
     return any(m in low for m in DECLINE_MARKERS)
+
+
+def _keyword_list(raw: str) -> list[str]:
+    """handoff_keywords is stored as one string, newline- or comma-
+    separated — same convention as Source.include_patterns."""
+    if not raw:
+        return []
+    return [p.strip().lower() for p in re.split(r"[\n,]+", raw) if p.strip()]
 
 
 async def answer_stream(
@@ -58,6 +67,11 @@ async def answer_stream(
                 await session.commit()
             summary_context = conv.summary
 
+    bot = await session.get(Bot, bot_id)
+    persona = bot.persona if bot else ""
+    instructions = bot.instructions if bot else ""
+    keywords = _keyword_list(bot.handoff_keywords if bot else "")
+
     with get_langfuse().start_as_current_observation(
         name="chat-answer", as_type="span", input=message,
     ) as root_span, propagate_attributes(
@@ -65,9 +79,20 @@ async def answer_stream(
         user_id=visitor_id,
         tags=[f"tenant:{tenant_id}", f"bot:{bot_id}"],
     ):
+        # Keyword-triggered handoff (SAN-1111, FR-H2) — deterministic,
+        # checked before the LLM call since it doesn't need one: a business
+        # may want to *always* escalate on certain terms (e.g. "lawyer",
+        # "cancel subscription") regardless of how naturally the visitor
+        # phrases an explicit ask for a human.
+        if keywords and any(k in message.lower() for k in keywords):
+            root_span.update(output={"handoff_requested": True, "trigger": "keyword"})
+            yield {"type": "handoff"}
+            return
+
         analysis = await llm.fast_analyze(message, history, summary_context)
-        if analysis.get("handoff_requested"):
-            root_span.update(output={"handoff_requested": True})
+        if analysis.get("handoff_requested") or analysis.get("negative_sentiment"):
+            trigger = "explicit_ask" if analysis.get("handoff_requested") else "sentiment"
+            root_span.update(output={"handoff_requested": True, "trigger": trigger})
             yield {"type": "handoff"}
             return
 
@@ -80,10 +105,6 @@ async def answer_stream(
             # chunks as fake "sources" under an otherwise-correct reply.
             # Skip retrieval entirely and answer from the greeting-exception
             # in ANSWER_SYSTEM, with no knowledge block and no citations.
-            bot = await session.get(Bot, bot_id)
-            persona = bot.persona if bot else ""
-            instructions = bot.instructions if bot else ""
-
             full_text = ""
             async for delta in llm.stream_answer(business_name, language, message, "", persona, instructions, summary_context):
                 full_text += delta
@@ -95,17 +116,36 @@ async def answer_stream(
 
         chunks = await retrieval.hybrid_search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
         if not chunks:
+            # Low-confidence-twice handoff (SAN-1111, FR-H2) — "low
+            # confidence" scoped to "retrieval found nothing at all",
+            # checkable before generating anything. A second consecutive
+            # empty-handed turn escalates instead of repeating the same
+            # "I don't know" reply; a single occurrence just answers
+            # normally and starts counting.
+            conv = await session.get(Conversation, conversation_id) if conversation_id else None
+            if conv is not None and conv.consecutive_low_confidence >= 1:
+                conv.consecutive_low_confidence = 0
+                await session.commit()
+                root_span.update(output={"handoff_requested": True, "trigger": "low_confidence_twice"})
+                yield {"type": "handoff"}
+                return
+            if conv is not None:
+                conv.consecutive_low_confidence += 1
+                await session.commit()
+
             text = "I don't have information about that yet. I can connect you with the team if you'd like."
             root_span.update(output={"text": text, "no_answer": True, "sources": []})
             yield {"type": "delta", "text": text}
             yield {"type": "done", "no_answer": True, "sources": []}
             return
 
-        knowledge = "\n".join(f"[{i}] ({c.get('url') or 'source'}) {c['text']}" for i, c in enumerate(chunks, 1))
+        if conversation_id:
+            conv = await session.get(Conversation, conversation_id)
+            if conv is not None and conv.consecutive_low_confidence != 0:
+                conv.consecutive_low_confidence = 0
+                await session.commit()
 
-        bot = await session.get(Bot, bot_id)
-        persona = bot.persona if bot else ""
-        instructions = bot.instructions if bot else ""
+        knowledge = "\n".join(f"[{i}] ({c.get('url') or 'source'}) {c['text']}" for i, c in enumerate(chunks, 1))
 
         full_text = ""
         async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions, summary_context):

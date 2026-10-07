@@ -11,6 +11,7 @@ export default function BotSettingsPage() {
   const [persona, setPersona] = useState("");
   const [instructions, setInstructions] = useState("");
   const [allowedDomains, setAllowedDomains] = useState("");
+  const [handoffKeywords, setHandoffKeywords] = useState("");
   const [avatarId, setAvatarId] = useState("orbit");
   const [avatarName, setAvatarName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,7 @@ export default function BotSettingsPage() {
         setPersona(bot.persona);
         setInstructions(bot.instructions);
         setAllowedDomains((bot.allowed_domains || []).join(", "));
+        setHandoffKeywords(bot.handoff_keywords || "");
         setAvatarId(bot.avatar_id || "orbit");
         setAvatarName(bot.avatar_name || "");
       })
@@ -45,7 +47,7 @@ export default function BotSettingsPage() {
         .filter(Boolean);
       await api.updateBot(botId, {
         name, persona, instructions, allowed_domains,
-        avatar_id: avatarId, avatar_name: avatarName,
+        avatar_id: avatarId, avatar_name: avatarName, handoff_keywords: handoffKeywords,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -122,6 +124,21 @@ export default function BotSettingsPage() {
           placeholder="e.g. Always recommend booking a demo call for enterprise questions."
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
+        />
+      </div>
+
+      <div>
+        <label className="text-sm font-medium">Always hand off on these phrases</label>
+        <p className="text-xs text-fg-muted mb-1">
+          Comma or newline-separated. If a visitor&apos;s message contains any of these, the bot connects them with
+          your team immediately instead of answering — useful for terms you always want a human on (e.g. refund,
+          cancel subscription, lawyer). Leave blank to rely on the bot&apos;s own judgment only.
+        </p>
+        <textarea
+          className="mt-1 w-full border border-border rounded-lg px-3 py-2 h-20"
+          placeholder="refund, cancel subscription, lawyer"
+          value={handoffKeywords}
+          onChange={(e) => setHandoffKeywords(e.target.value)}
         />
       </div>
 

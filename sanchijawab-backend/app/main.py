@@ -448,7 +448,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
             "instructions": bot.instructions, "model_tier": bot.model_tier,
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
-            "crm_webhook_url": bot.crm_webhook_url,
+            "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
         }
 
 
@@ -482,6 +482,7 @@ class UpdateBotRequest(BaseModel):
     avatar_id: str | None = None
     avatar_name: str | None = None
     crm_webhook_url: str | None = None
+    handoff_keywords: str | None = None
 
 
 @app.patch("/v1/bots/{bot_id}")
@@ -492,7 +493,10 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="admin")
 
-        for field in ("name", "persona", "instructions", "model_tier", "avatar_id", "avatar_name", "crm_webhook_url"):
+        for field in (
+            "name", "persona", "instructions", "model_tier", "avatar_id", "avatar_name",
+            "crm_webhook_url", "handoff_keywords",
+        ):
             value = getattr(body, field)
             if value is not None:
                 setattr(bot, field, value)
@@ -504,7 +508,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "instructions": bot.instructions, "model_tier": bot.model_tier,
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
-            "crm_webhook_url": bot.crm_webhook_url,
+            "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
         }
 
 

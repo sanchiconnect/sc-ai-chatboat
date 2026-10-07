@@ -60,7 +60,10 @@ a JSON object with these fields, nothing else:
  "handoff_requested": <true if the visitor explicitly asked for a human, else false>,
  "is_conversational": <true if the message is ONLY a greeting, thanks, goodbye, or
  similar small talk with no actual question about the business — false for anything
- that asks or implies a need for real information>}"""
+ that asks or implies a need for real information>,
+ "negative_sentiment": <true if the visitor's message expresses real frustration,
+ anger, or strong dissatisfaction (not just a neutral or mildly negative question) —
+ false otherwise>}"""
 
 SUMMARY_SYSTEM = """Update a running summary of a conversation between a website
 visitor and a support assistant. You are given the existing summary (if any) and
@@ -144,7 +147,10 @@ async def fast_analyze(message: str, history: list[dict], summary: str = "") -> 
             except RETRYABLE_EXCEPTIONS:
                 logger.warning("fast_analyze: transient error on attempt %d/%d", attempt + 1, MAX_ATTEMPTS)
                 if attempt + 1 == MAX_ATTEMPTS:
-                    fallback = {"standalone_query": message, "language": "en", "handoff_requested": False, "is_conversational": False}
+                    fallback = {
+                        "standalone_query": message, "language": "en", "handoff_requested": False,
+                        "is_conversational": False, "negative_sentiment": False,
+                    }
                     generation.update(
                         output=fallback, level="WARNING",
                         status_message="Gemini unreachable after retries — fell back to unrewritten query",
@@ -155,7 +161,10 @@ async def fast_analyze(message: str, history: list[dict], summary: str = "") -> 
         try:
             result = json.loads(resp.text)
         except (json.JSONDecodeError, TypeError):
-            result = {"standalone_query": message, "language": "en", "handoff_requested": False, "is_conversational": False}
+            result = {
+                "standalone_query": message, "language": "en", "handoff_requested": False,
+                "is_conversational": False, "negative_sentiment": False,
+            }
 
         generation.update(output=result, usage_details=_usage_details(resp))
         return result
