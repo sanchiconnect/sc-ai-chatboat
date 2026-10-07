@@ -784,6 +784,7 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
             "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": config.hidden_paths_json or [],
             "starter_questions": config.starter_questions_json or [],
+            "locale": config.locale or "en",
         }
 
 
@@ -801,6 +802,7 @@ class UpdateWidgetConfigRequest(BaseModel):
     mobile_enabled: bool | None = None
     hidden_paths: list[str] | None = None
     starter_questions: list[str] | None = None
+    locale: str | None = None
 
 
 @app.put("/v1/bots/{bot_id}/widget-config")
@@ -852,6 +854,8 @@ async def update_widget_config(
             config.hidden_paths_json = [p.strip() for p in body.hidden_paths if p.strip()]
         if body.starter_questions is not None:
             config.starter_questions_json = [q.strip() for q in body.starter_questions if q.strip()]
+        if body.locale is not None:
+            config.locale = body.locale
 
         await session.commit()
         return {
@@ -863,6 +867,7 @@ async def update_widget_config(
             "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": config.hidden_paths_json or [],
             "starter_questions": config.starter_questions_json or [],
+            "locale": config.locale or "en",
         }
 
 
@@ -1371,6 +1376,11 @@ async def public_widget_config(bot_id: str, request: Request):
             "devices": (config.devices_json if config else None) or DEFAULT_WIDGET_DEVICES,
             "hidden_paths": (config.hidden_paths_json if config else None) or [],
             "starter_questions": (config.starter_questions_json if config else None) or [],
+            # FR-W8 (Should) — widget UI chrome (input placeholder, consent
+            # gate, lead form, etc.) in the configured language; the bot's
+            # own answers already reply in the visitor's detected language
+            # (FR-C6) independent of this setting.
+            "locale": (config.locale if config else None) or "en",
         }
 
 

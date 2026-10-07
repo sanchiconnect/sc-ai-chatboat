@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { streamChat, pollMessages, submitLead, rateMessage, type ChatHistoryTurn } from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
+import { stringsFor, type WidgetStrings } from "./i18n";
 
 export interface WidgetProps {
   apiBase: string;
@@ -18,6 +19,7 @@ export interface WidgetProps {
   offsetY: number;
   starterQuestions: string[];
   hideBranding: boolean;
+  locale: string;
 }
 
 interface Message {
@@ -110,24 +112,24 @@ function saveConsent(botId: string, value: "accepted" | "declined") {
 }
 
 function ConsentGate({
-  text, primaryColor, onAccept, onDecline,
-}: { text: string; primaryColor: string; onAccept: () => void; onDecline: () => void }) {
+  text, primaryColor, onAccept, onDecline, t,
+}: { text: string; primaryColor: string; onAccept: () => void; onDecline: () => void; t: WidgetStrings }) {
   return (
     <div class="sj-consent-gate">
       <p class="sj-consent-text">{text}</p>
       <div class="sj-consent-actions">
         <button type="button" class="sj-consent-decline" onClick={onDecline}>
-          Decline
+          {t.consentDecline}
         </button>
         <button type="button" class="sj-send" style={{ background: primaryColor }} onClick={onAccept}>
-          Accept
+          {t.consentAccept}
         </button>
       </div>
     </div>
   );
 }
 
-function LeadForm({ onSubmit, onSkip }: { onSubmit: (v: { name: string; email: string; phone: string }) => void; onSkip: () => void }) {
+function LeadForm({ onSubmit, onSkip, t }: { onSubmit: (v: { name: string; email: string; phone: string }) => void; onSkip: () => void; t: WidgetStrings }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -139,18 +141,19 @@ function LeadForm({ onSubmit, onSkip }: { onSubmit: (v: { name: string; email: s
         onSubmit({ name, email, phone });
       }}
     >
-      <input class="sj-input" placeholder="Name" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-      <input class="sj-input" placeholder="Email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
-      <input class="sj-input" placeholder="Phone (optional)" value={phone} onInput={(e) => setPhone((e.target as HTMLInputElement).value)} />
+      <input class="sj-input" placeholder={t.leadName} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+      <input class="sj-input" placeholder={t.leadEmail} value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
+      <input class="sj-input" placeholder={t.leadPhone} value={phone} onInput={(e) => setPhone((e.target as HTMLInputElement).value)} />
       <div class="sj-lead-actions">
-        <button type="submit" class="sj-send">Send</button>
-        <button type="button" class="sj-lead-skip" onClick={onSkip}>No thanks</button>
+        <button type="submit" class="sj-send">{t.leadSend}</button>
+        <button type="button" class="sj-lead-skip" onClick={onSkip}>{t.leadSkip}</button>
       </div>
     </form>
   );
 }
 
 export function Widget(props: WidgetProps) {
+  const t = stringsFor(props.locale);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => loadHistory(props.botId));
   const [input, setInput] = useState("");
@@ -260,7 +263,7 @@ export function Widget(props: WidgetProps) {
             const next = [...m];
             next[next.length - 1] = {
               role: "bot",
-              content: "Connecting you with our team — someone will be with you shortly.",
+              content: t.connectingToTeam,
               leadForm: !leadSubmitted,
             };
             return next;
@@ -291,12 +294,12 @@ export function Widget(props: WidgetProps) {
               <button
                 class="sj-close"
                 onClick={() => downloadTranscript(props.botId, messages)}
-                aria-label="Download transcript"
-                title="Download transcript"
+                aria-label={t.downloadTranscript}
+                title={t.downloadTranscript}
               >
                 {"\u2B07"}
               </button>
-              <button class="sj-close" onClick={() => setOpen(false)} aria-label="Close chat">
+              <button class="sj-close" onClick={() => setOpen(false)} aria-label={t.closeChat}>
                 {"\u2715"}
               </button>
             </div>
@@ -319,7 +322,7 @@ export function Widget(props: WidgetProps) {
             )}
             {messages.map((m, i) => (
               <div key={i} class={`sj-bubble sj-bubble-${m.role}`}>
-                {m.role === "agent" && <div class="sj-agent-label">Agent</div>}
+                {m.role === "agent" && <div class="sj-agent-label">{t.agentLabel}</div>}
                 {m.role === "visitor" ? (
                   m.content
                 ) : m.content ? (
@@ -331,7 +334,7 @@ export function Widget(props: WidgetProps) {
                   <div class="sj-rating">
                     <button
                       class={`sj-rate-btn ${m.rated === 1 ? "sj-rate-active" : ""}`}
-                      aria-label="Good answer"
+                      aria-label={t.goodAnswer}
                       onClick={async () => {
                         if (!m.messageId) return;
                         setMessages((cur) => {
@@ -346,7 +349,7 @@ export function Widget(props: WidgetProps) {
                     </button>
                     <button
                       class={`sj-rate-btn ${m.rated === -1 ? "sj-rate-active" : ""}`}
-                      aria-label="Bad answer"
+                      aria-label={t.badAnswer}
                       onClick={async () => {
                         if (!m.messageId) return;
                         setMessages((cur) => {
@@ -367,7 +370,7 @@ export function Widget(props: WidgetProps) {
                       .filter((s) => s.url)
                       .map((s, j, arr) => (
                         <a key={j} href={s.url!} target="_blank" rel="noreferrer">
-                          {arr.length > 1 ? `Source ${j + 1}` : "Source"}
+                          {arr.length > 1 ? t.sourceN(j + 1) : t.source}
                         </a>
                       ))}
                   </div>
@@ -379,6 +382,7 @@ export function Widget(props: WidgetProps) {
                       if (conversationId) await submitLead(props.apiBase, props.botId, conversationId, v);
                     }}
                     onSkip={() => setLeadSubmitted(true)}
+                    t={t}
                   />
                 )}
                 {m.role === "bot" && !m.pending && i === messages.length - 1 && m.followUps && m.followUps.length > 0 && !handedOff && (
@@ -406,18 +410,19 @@ export function Widget(props: WidgetProps) {
                 setConsent("declined");
                 saveConsent(props.botId, "declined");
               }}
+              t={t}
             />
           )}
           {consentBlocking && consent === "declined" && (
             <div class="sj-consent-gate">
               <p class="sj-consent-text">
-                Chat is unavailable until consent is given.{" "}
+                {t.consentUnavailable}{" "}
                 <button
                   type="button"
                   class="sj-consent-rethink"
                   onClick={() => setConsent(null)}
                 >
-                  Change your mind?
+                  {t.consentChangeMind}
                 </button>
               </p>
             </div>
@@ -433,7 +438,7 @@ export function Widget(props: WidgetProps) {
             <input
               class="sj-input"
               value={input}
-              placeholder={"Type a message\u2026"}
+              placeholder={t.inputPlaceholder}
               onInput={(e) => setInput((e.target as HTMLInputElement).value)}
               disabled={sending || consentBlocking}
             />
@@ -446,7 +451,7 @@ export function Widget(props: WidgetProps) {
               {"\u27A4"}
             </button>
           </form>
-          {!props.hideBranding && <div class="sj-powered">Powered by SanchiJawab</div>}
+          {!props.hideBranding && <div class="sj-powered">{t.poweredBy}</div>}
         </div>
       )}
 
@@ -454,7 +459,7 @@ export function Widget(props: WidgetProps) {
         class="sj-launcher"
         style={{ background: open ? props.primaryColor : "transparent" }}
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? "Close chat" : "Open chat"}
+        aria-label={open ? t.closeChat : t.openChat}
       >
         {open ? <span class="sj-launcher-close">{"\u2715"}</span> : <BotAvatar avatarId={props.avatarId} size={56} />}
       </button>

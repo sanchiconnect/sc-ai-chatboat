@@ -21,6 +21,7 @@ interface RemoteConfig {
   hidden_paths?: string[];
   starter_questions?: string[];
   hide_branding?: boolean;
+  locale?: string;
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -116,6 +117,7 @@ async function boot() {
       offsetY={remote?.offsets?.y ?? 20}
       starterQuestions={remote?.starter_questions || []}
       hideBranding={remote?.hide_branding ?? false}
+      locale={remote?.locale || ds.locale || "en"}
     />,
     mount,
   );

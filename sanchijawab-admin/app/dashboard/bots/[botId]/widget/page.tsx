@@ -20,6 +20,7 @@ export default function WidgetSettingsPage() {
   const [mobileEnabled, setMobileEnabled] = useState(true);
   const [hiddenPaths, setHiddenPaths] = useState("");
   const [starterQuestions, setStarterQuestions] = useState("");
+  const [locale, setLocale] = useState("en");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -41,6 +42,7 @@ export default function WidgetSettingsPage() {
         setMobileEnabled(cfg.devices?.mobile ?? true);
         setHiddenPaths((cfg.hidden_paths || []).join("\n"));
         setStarterQuestions((cfg.starter_questions || []).join("\n"));
+        setLocale(cfg.locale || "en");
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -59,6 +61,7 @@ export default function WidgetSettingsPage() {
         desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
         hidden_paths: hiddenPaths.split(/[\n,]+/).map((p) => p.trim()).filter(Boolean),
         starter_questions: starterQuestions.split("\n").map((q) => q.trim()).filter(Boolean),
+        locale,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -136,6 +139,24 @@ export default function WidgetSettingsPage() {
             value={starterQuestions}
             onChange={(e) => setStarterQuestions(e.target.value)}
           />
+        </div>
+
+        <div>
+          <label htmlFor="widget-locale" className="text-sm font-medium">Widget language</label>
+          <p className="text-xs text-fg-muted mb-1">
+            Translates the widget&apos;s own chrome — input placeholder, consent gate, lead form, button labels.
+            The bot&apos;s actual answers already reply in whatever language the visitor writes in, regardless of
+            this setting.
+          </p>
+          <select
+            id="widget-locale"
+            className="mt-1 w-full border border-border rounded-lg px-3 py-2"
+            value={locale}
+            onChange={(e) => setLocale(e.target.value)}
+          >
+            <option value="en">English</option>
+            <option value="hi">हिन्दी (Hindi)</option>
+          </select>
         </div>
 
         <div>
