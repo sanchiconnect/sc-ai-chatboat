@@ -26,6 +26,16 @@ npm run dev
 npm run dev
 # open http://localhost:3001 (falls back off 3000 automatically since the
 # admin dashboard is already holding it — no manual port flag needed)
+
+# 6. Widget (terminal 5, only to test the embeddable chat bubble) — from sanchijawab-widget/
+npm run serve
+# rebuilds dist/widget.js, then serves it on http://localhost:5500
+# open http://localhost:5500/test.html — the bubble should appear bottom-right.
+# Paste on your own page (served over http://, not file://):
+#   <script src="http://localhost:5500/widget.js" data-bot="<bot id>" data-api="http://localhost:8000" async></script>
+# No bubble? Check, in order: step 6 is running, backend (step 2) is up,
+# data-bot is a real bot id in the DB you're running against, and the bot's
+# allowed domains / hidden pages (Widget settings) don't exclude the page.
 ```
 
 New migration after pulling changes that touched `app/models.py`:
