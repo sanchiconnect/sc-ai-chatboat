@@ -1,54 +1,91 @@
+# Whole stack in containers: `docker compose up -d --build`
+#
+# Reads secrets/settings from .env (copy .env.example). Four things in .env are
+# public URLs that get baked into images, see PUBLIC_* below. For day-to-day
+# development without containers, see RUNNING_LOCALLY.md instead.
+#
+# Production note: for a managed Postgres (e.g. Supabase, RDS) delete the `db`
+# service, set DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME in .env, and remove the
+# `depends_on: db` lines. The database needs the pgvector extension.
 services:
-  # The app database — app data AND vectors (pgvector extension), both
-  # Phase 0's PoC scripts (app/poc/*) and the real app point here in local
-  # dev. Production points at a Supabase project instead (.env override),
-  # not this container.
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: sanchijawab
-      POSTGRES_USER: sanchijawab
-      POSTGRES_PASSWORD: sanchijawab
+      POSTGRES_DB: ${DB_NAME:-sanchijawab}
+      POSTGRES_USER: ${DB_USER:-sanchijawab}
+      POSTGRES_PASSWORD: ${DB_PASS:-sanchijawab}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
-      # Host port 55432, not 5432 — this machine already runs a native
-      # Postgres service on 5432 (and something else on 5433). Containers
-      # still reach this one at db:5432 on the compose network; only
-      # host-side tools need 55432.
+      # 55432 on the host so it doesn't clash with a native Postgres on 5432;
+      # containers reach it as db:5432. Remove this mapping in production.
       - "55432:5432"
 
-  redis:
-    image: redis:7-alpine
+  # Runs database migrations once, then exits. api/worker wait for it.
+  migrate:
+    build: ./sanchijawab-backend
+    command: alembic upgrade head
+    env_file: .env
+    environment: &db-env
+      DB_HOST: db
+      DB_PORT: "5432"
+    depends_on:
+      db:
+        condition: service_healthy
 
   api:
     build: ./sanchijawab-backend
+    restart: unless-stopped
     env_file: .env
+    environment: *db-env
     depends_on:
-      - db
-      - redis
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     volumes:
       - appdata:/app/data
 
+  # Crawls websites, parses files, runs scheduled re-scans and retention purges.
   worker:
     build: ./sanchijawab-backend
+    restart: unless-stopped
     command: python -m app.worker
     env_file: .env
+    environment: *db-env
     depends_on:
-      - db
-      - redis
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - appdata:/app/data
 
-  dashboard:
-    build: ./sanchijawab-admin
-    env_file: .env
+  admin:
+    build:
+      context: ./sanchijawab-admin
+      args:
+        # Must be reachable from visitors' browsers (and from this container, for
+        # server-rendered pages). Rebuild the image after changing any of them.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WIDGET_URL: ${PUBLIC_WIDGET_URL:-http://localhost:5500/widget.js}
+        NEXT_PUBLIC_MARKETING_URL: ${PUBLIC_SITE_URL:-http://localhost:3000}
+    restart: unless-stopped
     depends_on:
       - api
     ports:
-      - "5173:5173"
+      - "3000:3000"
+
+  # Serves widget.js to customers' websites.
+  widget:
+    build: ./sanchijawab-widget
+    restart: unless-stopped
+    ports:
+      - "5500:80"
 
 volumes:
   pgdata:

@@ -1,0 +1,4 @@
+node_modules
+dist
+widget_test_screenshot.png
+test_widget_browser.py
