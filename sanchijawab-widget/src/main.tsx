@@ -16,6 +16,9 @@ interface RemoteConfig {
   consent_text?: string;
   avatar_id?: string;
   avatar_name?: string;
+  offsets?: { x: number; y: number };
+  devices?: { desktop: boolean; mobile: boolean };
+  hidden_paths?: string[];
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -26,6 +29,31 @@ async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig
   } catch {
     return null; // offline/network error — fall back to data-* attributes below
   }
+}
+
+// Same 480px breakpoint the widget's own CSS already uses to switch the
+// chat panel to fullscreen — "mobile" here means the same thing it means
+// there, not an attempt to sniff the actual device.
+const MOBILE_BREAKPOINT = 480;
+
+function isDeviceAllowed(devices: RemoteConfig["devices"]): boolean {
+  if (!devices) return true;
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
+  return isMobile ? devices.mobile !== false : devices.desktop !== false;
+}
+
+// A pattern ending in "*" is a prefix match (e.g. "/checkout*" hides
+// "/checkout" and "/checkout/step1"); anything else is a plain substring
+// match — same convention as the dashboard's other pattern fields
+// (handoff keywords, routing rules' page_pattern).
+function isPathHidden(patterns: string[] | undefined, pathname: string): boolean {
+  if (!patterns || patterns.length === 0) return false;
+  return patterns.some((raw) => {
+    const pattern = raw.trim();
+    if (!pattern) return false;
+    if (pattern.endsWith("*")) return pathname.startsWith(pattern.slice(0, -1));
+    return pathname.includes(pattern);
+  });
 }
 
 async function boot() {
@@ -46,6 +74,14 @@ async function boot() {
   // fails, not an override — otherwise editing the dashboard would never
   // visibly change anything already-installed on a customer's site.
   const remote = await fetchConfig(apiBase, botId);
+
+  // Device + URL visibility rules (SAN-1101, FR-W6) — decided once, at
+  // boot, before anything is mounted: there's no reactive chrome to hide
+  // later, and re-checking on every SPA route change would need a router
+  // integration this script deliberately doesn't have.
+  if (remote && (!isDeviceAllowed(remote.devices) || isPathHidden(remote.hidden_paths, window.location.pathname))) {
+    return;
+  }
 
   const host = document.createElement("div");
   host.id = "sanchijawab-widget-host";
@@ -73,6 +109,9 @@ async function boot() {
       }
       avatarId={remote?.avatar_id || "orbit"}
       avatarName={remote?.avatar_name || ""}
+      position={remote?.position === "left" ? "left" : "right"}
+      offsetX={remote?.offsets?.x ?? 20}
+      offsetY={remote?.offsets?.y ?? 20}
     />,
     mount,
   );

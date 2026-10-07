@@ -13,6 +13,9 @@ export interface WidgetProps {
   consentText: string;
   avatarId: string;
   avatarName: string;
+  position: "left" | "right";
+  offsetX: number;
+  offsetY: number;
 }
 
 interface Message {
@@ -267,7 +270,10 @@ export function Widget(props: WidgetProps) {
   }
 
   return (
-    <div class="sj-root">
+    <div
+      class={`sj-root ${props.position === "left" ? "sj-pos-left" : ""}`}
+      style={{ "--sj-offset-x": `${props.offsetX}px`, "--sj-offset-y": `${props.offsetY}px` }}
+    >
       {open && (
         <div class="sj-panel">
           <div class="sj-header" style={{ background: props.primaryColor }}>

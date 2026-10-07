@@ -14,6 +14,11 @@ export default function WidgetSettingsPage() {
   const [header, setHeader] = useState("");
   const [requireConsent, setRequireConsent] = useState(true);
   const [consentText, setConsentText] = useState("");
+  const [offsetX, setOffsetX] = useState(20);
+  const [offsetY, setOffsetY] = useState(20);
+  const [desktopEnabled, setDesktopEnabled] = useState(true);
+  const [mobileEnabled, setMobileEnabled] = useState(true);
+  const [hiddenPaths, setHiddenPaths] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -29,6 +34,11 @@ export default function WidgetSettingsPage() {
         setHeader(cfg.texts.header || "");
         setRequireConsent(cfg.require_consent);
         setConsentText(cfg.consent_text || "");
+        setOffsetX(cfg.offsets?.x ?? 20);
+        setOffsetY(cfg.offsets?.y ?? 20);
+        setDesktopEnabled(cfg.devices?.desktop ?? true);
+        setMobileEnabled(cfg.devices?.mobile ?? true);
+        setHiddenPaths((cfg.hidden_paths || []).join("\n"));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -43,6 +53,9 @@ export default function WidgetSettingsPage() {
       await api.updateWidgetConfig(botId, {
         primary_color: color, position, welcome, header,
         require_consent: requireConsent, consent_text: consentText,
+        offset_x: offsetX, offset_y: offsetY,
+        desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
+        hidden_paths: hiddenPaths.split(/[\n,]+/).map((p) => p.trim()).filter(Boolean),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -120,6 +133,74 @@ export default function WidgetSettingsPage() {
           </select>
         </div>
 
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label htmlFor="widget-offset-x" className="text-sm font-medium">
+              Horizontal offset (px)
+            </label>
+            <input
+              id="widget-offset-x"
+              type="number"
+              min={0}
+              className="mt-1 w-full border border-border rounded-lg px-3 py-2"
+              value={offsetX}
+              onChange={(e) => setOffsetX(Number(e.target.value))}
+            />
+          </div>
+          <div className="flex-1">
+            <label htmlFor="widget-offset-y" className="text-sm font-medium">
+              Vertical offset (px)
+            </label>
+            <input
+              id="widget-offset-y"
+              type="number"
+              min={0}
+              className="mt-1 w-full border border-border rounded-lg px-3 py-2"
+              value={offsetY}
+              onChange={(e) => setOffsetY(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <label className="text-sm font-medium block mb-2">Show on</label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={desktopEnabled}
+                onChange={(e) => setDesktopEnabled(e.target.checked)}
+              />
+              Desktop
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={mobileEnabled}
+                onChange={(e) => setMobileEnabled(e.target.checked)}
+              />
+              Mobile
+            </label>
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <label htmlFor="widget-hidden-paths" className="text-sm font-medium">
+            Hide on these pages
+          </label>
+          <p className="text-xs text-fg-muted mb-1">
+            Comma or newline-separated. A plain value matches any URL containing it (e.g. /checkout); end a value
+            with * to match a whole section (e.g. /admin/*). Leave blank to show everywhere.
+          </p>
+          <textarea
+            id="widget-hidden-paths"
+            className="w-full border border-border rounded-lg px-3 py-2 h-20 text-sm"
+            placeholder="/checkout, /admin/*"
+            value={hiddenPaths}
+            onChange={(e) => setHiddenPaths(e.target.value)}
+          />
+        </div>
+
         <div className="border-t border-border pt-5">
           <label className="flex items-center gap-2 text-sm font-medium">
             <input
@@ -152,7 +233,11 @@ export default function WidgetSettingsPage() {
         <p className="text-sm font-medium mb-2">Preview</p>
         <div className="bg-surface-2 rounded-xl h-80 relative overflow-hidden border border-border">
           <div
-            className={`absolute bottom-4 ${position === "left" ? "left-4" : "right-4"} w-64 bg-surface rounded-lg shadow-lg overflow-hidden`}
+            className="absolute w-64 bg-surface rounded-lg shadow-lg overflow-hidden"
+            style={{
+              bottom: `${Math.min(offsetY, 200)}px`,
+              [position === "left" ? "left" : "right"]: `${Math.min(offsetX, 200)}px`,
+            }}
           >
             <div className="px-4 py-3 text-white font-semibold text-sm" style={{ background: color }}>
               {header || "Chat with us"}

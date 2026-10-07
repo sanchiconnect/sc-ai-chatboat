@@ -755,6 +755,11 @@ DEFAULT_CONSENT_TEXT = (
     "By using this chat, you agree that your messages may be stored and used to provide support. "
     "Don't share sensitive personal information."
 )
+# Pixel offset from the corner the widget docks to (SAN-1101, FR-W5) — 20/20
+# matches the widget's own pre-existing hardcoded CSS, so a bot that never
+# configures this looks exactly like it did before this setting existed.
+DEFAULT_WIDGET_OFFSETS = {"x": 20, "y": 20}
+DEFAULT_WIDGET_DEVICES = {"desktop": True, "mobile": True}
 
 
 @app.get("/v1/bots/{bot_id}/widget-config")
@@ -775,6 +780,9 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
             "position": config.position, "texts": config.texts_json or DEFAULT_WIDGET_TEXTS,
             "consent_text": config.consent_text or DEFAULT_CONSENT_TEXT,
             "require_consent": config.require_consent,
+            "offsets": config.offsets_json or DEFAULT_WIDGET_OFFSETS,
+            "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
+            "hidden_paths": config.hidden_paths_json or [],
         }
 
 
@@ -786,6 +794,11 @@ class UpdateWidgetConfigRequest(BaseModel):
     header: str | None = None
     consent_text: str | None = None
     require_consent: bool | None = None
+    offset_x: int | None = None
+    offset_y: int | None = None
+    desktop_enabled: bool | None = None
+    mobile_enabled: bool | None = None
+    hidden_paths: list[str] | None = None
 
 
 @app.put("/v1/bots/{bot_id}/widget-config")
@@ -819,6 +832,22 @@ async def update_widget_config(
             config.consent_text = body.consent_text
         if body.require_consent is not None:
             config.require_consent = body.require_consent
+        if body.offset_x is not None or body.offset_y is not None:
+            offsets = dict(config.offsets_json or DEFAULT_WIDGET_OFFSETS)
+            if body.offset_x is not None:
+                offsets["x"] = body.offset_x
+            if body.offset_y is not None:
+                offsets["y"] = body.offset_y
+            config.offsets_json = offsets
+        if body.desktop_enabled is not None or body.mobile_enabled is not None:
+            devices = dict(config.devices_json or DEFAULT_WIDGET_DEVICES)
+            if body.desktop_enabled is not None:
+                devices["desktop"] = body.desktop_enabled
+            if body.mobile_enabled is not None:
+                devices["mobile"] = body.mobile_enabled
+            config.devices_json = devices
+        if body.hidden_paths is not None:
+            config.hidden_paths_json = [p.strip() for p in body.hidden_paths if p.strip()]
 
         await session.commit()
         return {
@@ -826,6 +855,9 @@ async def update_widget_config(
             "position": config.position, "texts": config.texts_json,
             "consent_text": config.consent_text or DEFAULT_CONSENT_TEXT,
             "require_consent": config.require_consent,
+            "offsets": config.offsets_json or DEFAULT_WIDGET_OFFSETS,
+            "devices": config.devices_json or DEFAULT_WIDGET_DEVICES,
+            "hidden_paths": config.hidden_paths_json or [],
         }
 
 
@@ -1319,6 +1351,14 @@ async def public_widget_config(bot_id: str, request: Request):
             "consent_text": (config.consent_text if config else "") or DEFAULT_CONSENT_TEXT,
             "avatar_id": bot.avatar_id,
             "avatar_name": bot.avatar_name,
+            # Device/URL visibility (SAN-1101, FR-W6) can only be decided
+            # client-side — the script doesn't know the visitor's viewport,
+            # and SPA navigation changes window.location without a new
+            # request — so these are handed to the widget to evaluate itself
+            # rather than enforced here.
+            "offsets": (config.offsets_json if config else None) or DEFAULT_WIDGET_OFFSETS,
+            "devices": (config.devices_json if config else None) or DEFAULT_WIDGET_DEVICES,
+            "hidden_paths": (config.hidden_paths_json if config else None) or [],
         }
 
 

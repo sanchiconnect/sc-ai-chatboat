@@ -7,8 +7,8 @@
 
 .sj-launcher {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: var(--sj-offset-x, 20px);
+  bottom: var(--sj-offset-y, 20px);
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -28,10 +28,15 @@
   line-height: 1;
 }
 
+.sj-root.sj-pos-left .sj-launcher {
+  right: auto;
+  left: var(--sj-offset-x, 20px);
+}
+
 .sj-panel {
   position: fixed;
-  right: 20px;
-  bottom: 88px;
+  right: var(--sj-offset-x, 20px);
+  bottom: calc(var(--sj-offset-y, 20px) + 68px);
   width: 360px;
   height: 520px;
   max-height: 70vh;
@@ -42,6 +47,11 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 2147483000;
+}
+
+.sj-root.sj-pos-left .sj-panel {
+  right: auto;
+  left: var(--sj-offset-x, 20px);
 }
 
 .sj-header {
@@ -305,5 +315,13 @@
   .sj-launcher {
     right: 16px;
     bottom: 16px;
+  }
+  .sj-root.sj-pos-left .sj-panel {
+    left: 0;
+    right: auto;
+  }
+  .sj-root.sj-pos-left .sj-launcher {
+    left: 16px;
+    right: auto;
   }
 }
