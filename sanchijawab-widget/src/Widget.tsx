@@ -19,6 +19,7 @@ export interface WidgetProps {
   offsetY: number;
   starterQuestions: string[];
   hideBranding: boolean;
+  showSources: boolean;
   locale: string;
   theme: "light" | "dark";
   onReady?: (controller: WidgetController) => void;
@@ -496,7 +497,7 @@ export function Widget(props: WidgetProps) {
                     </button>
                   </div>
                 )}
-                {m.sources && m.sources.length > 0 && (
+                {props.showSources && m.sources && m.sources.length > 0 && (
                   <div class="sj-sources">
                     {m.sources
                       .filter((s) => s.url)

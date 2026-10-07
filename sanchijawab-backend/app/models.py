@@ -117,6 +117,9 @@ class Bot(Base):
     # {"text": ...} payload that Slack's incoming-webhooks format accepts
     # without needing the Slack SDK or an app install.
     slack_webhook_url: Mapped[str] = mapped_column(String(1024), default="")
+    # Automatic conversation retention (SAN-1127) — the worker deletes
+    # conversations older than this many days. NULL means keep forever.
+    retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Comma/newline-separated phrases (case-insensitive substring match) —
     # deterministic escalation for things a business always wants a human
     # on, regardless of how the LLM's own ask-for-human detection reads the
@@ -348,6 +351,9 @@ class WidgetConfig(Base):
     consent_text: Mapped[str] = mapped_column(Text, default="")
     require_consent: Mapped[bool] = mapped_column(Boolean, default=True)
     locale: Mapped[str] = mapped_column(String(16), default="en")
+    # Source links under answers (FR-C3, toggleable) — the widget hides them
+    # when false.
+    show_sources: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
 class ToolConnection(Base):

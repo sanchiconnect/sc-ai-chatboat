@@ -20,10 +20,12 @@ from .db import SessionLocal
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
-from .models import IngestJob, Source
+from .models import Bot, IngestJob, Source
+from .services import privacy
 from .services.ingest import CrawlCancelled, ingest_file_source, ingest_website_source
 
 POLL_SECONDS = 2
+RETENTION_CHECK_SECONDS = 3600
 SCHEDULE_CHECK_SECONDS = 60  # scheduled re-scans don't need second-level precision
 
 
@@ -111,10 +113,30 @@ async def enqueue_due_rescans() -> None:
             await session.commit()
 
 
+async def purge_expired_conversations() -> int:
+    """Automatic retention (SAN-1127) — deletes conversations older than each
+    bot's own retention_days. Bots with no retention set keep everything."""
+    total = 0
+    async with SessionLocal() as session:
+        bots = (await session.execute(select(Bot).where(Bot.retention_days.is_not(None)))).scalars().all()
+        for bot in bots:
+            total += await privacy.purge_older_than(session, bot_id=bot.id, days=bot.retention_days)
+        if total:
+            await session.commit()
+    return total
+
+
 async def run_forever() -> None:
     print("Worker started, polling ingest_jobs ...")
     last_schedule_check = datetime.min
+    last_retention_check = datetime.min
     while True:
+        if (datetime.utcnow() - last_retention_check).total_seconds() >= RETENTION_CHECK_SECONDS:
+            purged = await purge_expired_conversations()
+            if purged:
+                print(f"retention: deleted {purged} expired conversations")
+            last_retention_check = datetime.utcnow()
+
         if (datetime.utcnow() - last_schedule_check).total_seconds() >= SCHEDULE_CHECK_SECONDS:
             await enqueue_due_rescans()
             last_schedule_check = datetime.utcnow()

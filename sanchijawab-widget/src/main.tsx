@@ -58,6 +58,7 @@ interface RemoteConfig {
   hide_branding?: boolean;
   locale?: string;
   theme?: string;
+  show_sources?: boolean;
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -153,6 +154,7 @@ async function boot() {
       offsetY={remote?.offsets?.y ?? 20}
       starterQuestions={remote?.starter_questions || []}
       hideBranding={remote?.hide_branding ?? false}
+      showSources={remote?.show_sources ?? true}
       locale={remote?.locale || ds.locale || "en"}
       theme={remote?.theme === "dark" ? "dark" : "light"}
       onReady={installRealController}

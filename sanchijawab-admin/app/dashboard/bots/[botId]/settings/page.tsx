@@ -15,6 +15,9 @@ export default function BotSettingsPage() {
   const [handoffKeywords, setHandoffKeywords] = useState("");
   const [avatarId, setAvatarId] = useState("orbit");
   const [avatarName, setAvatarName] = useState("");
+  const [retentionDays, setRetentionDays] = useState("");
+  const [visitorId, setVisitorId] = useState("");
+  const [privacyMsg, setPrivacyMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -32,6 +35,7 @@ export default function BotSettingsPage() {
         setHandoffKeywords(bot.handoff_keywords || "");
         setAvatarId(bot.avatar_id || "orbit");
         setAvatarName(bot.avatar_name || "");
+        setRetentionDays(bot.retention_days ? String(bot.retention_days) : "");
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load bot"))
       .finally(() => setLoading(false));
@@ -50,6 +54,7 @@ export default function BotSettingsPage() {
       await api.updateBot(botId, {
         name, persona, instructions, allowed_domains, model_tier: modelTier,
         avatar_id: avatarId, avatar_name: avatarName, handoff_keywords: handoffKeywords,
+        retention_days: Number(retentionDays) > 0 ? Math.floor(Number(retentionDays)) : 0,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -60,10 +65,37 @@ export default function BotSettingsPage() {
     }
   }
 
+  async function exportVisitor() {
+    setPrivacyMsg(null);
+    try {
+      const data = await api.exportVisitorData(botId, visitorId.trim());
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `visitor-${visitorId.trim()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setPrivacyMsg(err instanceof ApiError ? err.message : "Export failed");
+    }
+  }
+
+  async function eraseVisitor() {
+    if (!window.confirm("Permanently delete every conversation, message and lead stored for this visitor?")) return;
+    setPrivacyMsg(null);
+    try {
+      const res = await api.eraseVisitorData(botId, visitorId.trim());
+      setPrivacyMsg(`Deleted ${res.deleted_conversations} conversation(s).`);
+    } catch (err) {
+      setPrivacyMsg(err instanceof ApiError ? err.message : "Erase failed");
+    }
+  }
+
   if (loading) return <p className="text-fg-muted">Loading…</p>;
 
   return (
-    <form onSubmit={save} className="max-w-2xl space-y-5">
+    <div className="max-w-2xl space-y-10">
+    <form onSubmit={save} className="space-y-5">
       <h2 className="text-lg font-bold">Bot settings</h2>
       <p className="text-sm text-fg-muted -mt-3">
         Persona and instructions change how the bot actually answers — they&apos;re sent to the model on every question.
@@ -174,6 +206,23 @@ export default function BotSettingsPage() {
         />
       </div>
 
+      <div>
+        <label htmlFor="bot-retention" className="text-sm font-medium">Delete conversations after (days)</label>
+        <p className="text-xs text-fg-muted mb-1">
+          Conversations, messages and leads older than this are deleted automatically (checked hourly by the worker).
+          Leave blank to keep everything.
+        </p>
+        <input
+          id="bot-retention"
+          type="number"
+          min={1}
+          className="mt-1 w-40 border border-border rounded-lg px-3 py-2"
+          placeholder="e.g. 90"
+          value={retentionDays}
+          onChange={(e) => setRetentionDays(e.target.value)}
+        />
+      </div>
+
       <button
         type="submit"
         disabled={saving}
@@ -182,5 +231,40 @@ export default function BotSettingsPage() {
         {saving ? "Saving…" : saved ? "Saved!" : "Save changes"}
       </button>
     </form>
+
+    <section className="space-y-3 border-t border-border pt-6">
+      <h3 className="text-base font-bold">Visitor data requests</h3>
+      <p className="text-sm text-fg-muted">
+        Export or permanently erase everything stored about one visitor (GDPR / India DPDP Act). The visitor id is
+        shown on each conversation in the Inbox.
+      </p>
+      {privacyMsg && <div className="text-sm bg-surface-2 rounded p-2">{privacyMsg}</div>}
+      <label htmlFor="visitor-id" className="text-sm font-medium">Visitor id</label>
+      <input
+        id="visitor-id"
+        className="w-full border border-border rounded-lg px-3 py-2"
+        value={visitorId}
+        onChange={(e) => setVisitorId(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={!visitorId.trim()}
+          onClick={exportVisitor}
+          className="border border-border rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          Export data
+        </button>
+        <button
+          type="button"
+          disabled={!visitorId.trim()}
+          onClick={eraseVisitor}
+          className="bg-danger text-on-danger rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          Erase data
+        </button>
+      </div>
+    </section>
+    </div>
   );
 }

@@ -455,6 +455,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
             "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
+            "retention_days": bot.retention_days,
         }
 
 
@@ -491,6 +492,7 @@ class UpdateBotRequest(BaseModel):
     handoff_keywords: str | None = None
     business_hours: dict | None = None
     slack_webhook_url: str | None = None
+    retention_days: int | None = None  # 0 turns automatic retention off
 
 
 @app.patch("/v1/bots/{bot_id}")
@@ -512,6 +514,10 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             bot.allowed_domains = [d.strip().lower() for d in body.allowed_domains if d.strip()]
         if body.business_hours is not None:
             bot.business_hours_json = body.business_hours
+        if body.retention_days is not None:
+            if body.retention_days < 0:
+                raise HTTPException(400, "retention_days must be 0 (off) or a positive number of days")
+            bot.retention_days = body.retention_days or None
         await session.commit()
         return {
             "bot_id": bot.id, "name": bot.name, "persona": bot.persona,
@@ -520,6 +526,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
             "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
+            "retention_days": bot.retention_days,
         }
 
 
@@ -825,6 +832,7 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
             "hidden_paths": config.hidden_paths_json or [],
             "starter_questions": config.starter_questions_json or [],
             "locale": config.locale or "en",
+            "show_sources": config.show_sources,
         }
 
 
@@ -843,6 +851,7 @@ class UpdateWidgetConfigRequest(BaseModel):
     hidden_paths: list[str] | None = None
     starter_questions: list[str] | None = None
     locale: str | None = None
+    show_sources: bool | None = None
 
 
 @app.put("/v1/bots/{bot_id}/widget-config")
@@ -896,6 +905,8 @@ async def update_widget_config(
             config.starter_questions_json = [q.strip() for q in body.starter_questions if q.strip()]
         if body.locale is not None:
             config.locale = body.locale
+        if body.show_sources is not None:
+            config.show_sources = body.show_sources
 
         await session.commit()
         return {
@@ -908,6 +919,7 @@ async def update_widget_config(
             "hidden_paths": config.hidden_paths_json or [],
             "starter_questions": config.starter_questions_json or [],
             "locale": config.locale or "en",
+            "show_sources": config.show_sources,
         }
 
 
@@ -1422,6 +1434,7 @@ async def public_widget_config(bot_id: str, request: Request):
             # (FR-C6) independent of this setting.
             "locale": (config.locale if config else None) or "en",
             "theme": (config.theme if config else None) or "light",
+            "show_sources": config.show_sources if config else True,
         }
 
 

@@ -22,6 +22,7 @@ export default function WidgetSettingsPage() {
   const [hiddenPaths, setHiddenPaths] = useState("");
   const [starterQuestions, setStarterQuestions] = useState("");
   const [locale, setLocale] = useState("en");
+  const [showSources, setShowSources] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -45,6 +46,7 @@ export default function WidgetSettingsPage() {
         setHiddenPaths((cfg.hidden_paths || []).join("\n"));
         setStarterQuestions((cfg.starter_questions || []).join("\n"));
         setLocale(cfg.locale || "en");
+        setShowSources(cfg.show_sources ?? true);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -63,7 +65,7 @@ export default function WidgetSettingsPage() {
         desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
         hidden_paths: hiddenPaths.split(/[\n,]+/).map((p) => p.trim()).filter(Boolean),
         starter_questions: starterQuestions.split("\n").map((q) => q.trim()).filter(Boolean),
-        locale,
+        locale, show_sources: showSources,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -253,6 +255,18 @@ export default function WidgetSettingsPage() {
             value={hiddenPaths}
             onChange={(e) => setHiddenPaths(e.target.value)}
           />
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={showSources}
+              onChange={(e) => setShowSources(e.target.checked)}
+            />
+            Show source links under answers
+          </label>
+          <p className="text-xs text-fg-muted mt-1 ml-6">Up to 3 links to the pages the answer came from.</p>
         </div>
 
         <div className="border-t border-border pt-5">
