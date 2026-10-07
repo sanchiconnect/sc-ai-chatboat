@@ -1,0 +1,31 @@
+{
+ "saved_at": "2026-10-07T11:33:05.721257",
+ "n": 150,
+ "decline_rate": 0.22,
+ "groundedness_avg": 97.0,
+ "groundedness_n": 10,
+ "p50_total_s": 11.38,
+ "p95_total_s": 17.35,
+ "by_site": {
+  "chumbak.com": {
+   "n": 30,
+   "decline_rate": 0.433
+  },
+  "jecrcfoundation.com": {
+   "n": 30,
+   "decline_rate": 0.133
+  },
+  "motherhoodindia.com": {
+   "n": 30,
+   "decline_rate": 0.3
+  },
+  "sanchiconnect.com": {
+   "n": 30,
+   "decline_rate": 0.133
+  },
+  "urbancompany.com": {
+   "n": 30,
+   "decline_rate": 0.1
+  }
+ }
+}

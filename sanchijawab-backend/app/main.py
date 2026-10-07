@@ -42,7 +42,7 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    AuditLog, BillingProfile, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
+    AuditLog, BillingProfile, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, llm, privacy, retrieval, storage
@@ -888,7 +888,7 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
         }
 
 
-TRIGGER_TYPES = {"time", "scroll", "exit"}
+TRIGGER_TYPES = {"time", "scroll", "exit", "visits"}
 MAX_TRIGGERS = 5
 
 
@@ -898,6 +898,7 @@ class TriggerIn(BaseModel):
     value: int = 0
     message: str
     page_pattern: str = ""
+    variant: str = ""  # "" (everyone), "A" or "B" — A/B test groups
 
 
 def _clean_triggers(items: list[TriggerIn]) -> list[dict]:
@@ -914,9 +915,13 @@ def _clean_triggers(items: list[TriggerIn]) -> list[dict]:
             raise HTTPException(422, "time triggers need 1-600 seconds")
         if t.type == "scroll" and not 5 <= t.value <= 100:
             raise HTTPException(422, "scroll triggers need 5-100 percent")
+        if t.type == "visits" and not 2 <= t.value <= 50:
+            raise HTTPException(422, "returning-visitor triggers need a visit number from 2 to 50")
+        if t.variant not in ("", "A", "B"):
+            raise HTTPException(422, "variant must be empty, A or B")
         out.append({
-            "id": t.id.strip()[:32] or uuid.uuid4().hex[:8], "type": t.type, "value": t.value if t.type != "exit" else 0,
-            "message": message, "page_pattern": t.page_pattern.strip()[:200],
+            "id": t.id.strip()[:32] or uuid.uuid4().hex[:8], "type": t.type, "value": 0 if t.type == "exit" else t.value,
+            "message": message, "page_pattern": t.page_pattern.strip()[:200], "variant": t.variant,
         })
     return out
 
@@ -2105,6 +2110,68 @@ async def analytics_unanswered(bot_id: str, days: int = 30, user: CurrentUser = 
                 "bot_answer": bm.content, "created_at": bm.created_at.isoformat(),
             })
         return results
+
+
+class TriggerEventIn(BaseModel):
+    trigger_id: str
+    event: str
+    visitor_id: str = ""
+
+
+@app.post(
+    "/public/w/{bot_id}/trigger-event",
+    dependencies=[Depends(rate_limit("trigger-event", limit=60, window_seconds=60))],
+)
+async def record_trigger_event(bot_id: str, body: TriggerEventIn, request: Request):
+    if body.event not in ("shown", "clicked"):
+        raise HTTPException(422, "event must be shown or clicked")
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        _enforce_domain_allowlist(bot, request)
+        config = await session.get(WidgetConfig, bot_id)
+        trigger = next((t for t in (config.triggers_json if config else None) or [] if t.get("id") == body.trigger_id), None)
+        if trigger is None:
+            return {"recorded": False}  # trigger was edited/removed since the page loaded — ignore quietly
+        session.add(TriggerEvent(
+            tenant_id=bot.tenant_id, bot_id=bot_id, trigger_id=body.trigger_id, variant=trigger.get("variant", ""),
+            event=body.event, visitor_id=body.visitor_id[:64],
+        ))
+        await session.commit()
+        return {"recorded": True}
+
+
+@app.get("/v1/bots/{bot_id}/analytics/triggers")
+async def analytics_triggers(bot_id: str, days: int = 30, user: CurrentUser = Depends(get_current_user)):
+    """Per proactive message: how many times it was shown and clicked, so two
+    A/B variants can be compared."""
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
+        config = await session.get(WidgetConfig, bot_id)
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        rows = (
+            await session.execute(
+                select(TriggerEvent.trigger_id, TriggerEvent.event, func.count())
+                .where(TriggerEvent.bot_id == bot_id, TriggerEvent.created_at >= cutoff)
+                .group_by(TriggerEvent.trigger_id, TriggerEvent.event)
+            )
+        ).all()
+        counts: dict[str, dict[str, int]] = {}
+        for trigger_id, event, n in rows:
+            counts.setdefault(trigger_id, {})[event] = n
+        out = []
+        for t in (config.triggers_json if config else None) or []:
+            c = counts.get(t["id"], {})
+            shown, clicked = c.get("shown", 0), c.get("clicked", 0)
+            out.append({
+                "trigger_id": t["id"], "type": t["type"], "message": t["message"], "variant": t.get("variant", ""),
+                "shown": shown, "clicked": clicked, "click_rate": round(clicked / shown, 3) if shown else None,
+            })
+        return out
 
 
 @app.get("/v1/bots/{bot_id}/analytics/crawl-success")

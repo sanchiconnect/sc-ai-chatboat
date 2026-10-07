@@ -24,6 +24,7 @@ export default function WidgetSettingsPage() {
   const [locale, setLocale] = useState("en");
   const [showSources, setShowSources] = useState(true);
   const [triggers, setTriggers] = useState<WidgetTrigger[]>([]);
+  const [results, setResults] = useState<Awaited<ReturnType<typeof api.triggerAnalytics>>>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -49,6 +50,7 @@ export default function WidgetSettingsPage() {
         setLocale(cfg.locale || "en");
         setShowSources(cfg.show_sources ?? true);
         setTriggers(cfg.triggers || []);
+        api.triggerAnalytics(botId).then(setResults).catch(() => setResults([]));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -272,24 +274,36 @@ export default function WidgetSettingsPage() {
                   aria-label="When to show"
                   className="border border-border rounded-lg px-2 py-1"
                   value={t.type}
-                  onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, type: e.target.value as WidgetTrigger["type"], value: e.target.value === "scroll" ? 50 : e.target.value === "time" ? 15 : 0 } : x)))}
+                  onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, type: e.target.value as WidgetTrigger["type"], value: e.target.value === "scroll" ? 50 : e.target.value === "time" ? 15 : e.target.value === "visits" ? 2 : 0 } : x)))}
                 >
                   <option value="time">After time on page</option>
                   <option value="scroll">After scrolling</option>
                   <option value="exit">When about to leave (desktop)</option>
+                  <option value="visits">On a returning visit</option>
                 </select>
                 {t.type !== "exit" && (
                   <label className="flex items-center gap-1">
+                    {t.type === "visits" && "from visit #"}
                     <input
-                      type="number" min={1} max={t.type === "time" ? 600 : 100}
-                      aria-label={t.type === "time" ? "Seconds" : "Percent"}
+                      type="number" min={t.type === "visits" ? 2 : 1} max={t.type === "time" ? 600 : t.type === "visits" ? 50 : 100}
+                      aria-label={t.type === "time" ? "Seconds" : t.type === "visits" ? "Visit number" : "Percent"}
                       className="w-20 border border-border rounded-lg px-2 py-1"
                       value={t.value}
                       onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, value: Number(e.target.value) } : x)))}
                     />
-                    {t.type === "time" ? "seconds" : "% of the page"}
+                    {t.type === "time" ? "seconds" : t.type === "scroll" ? "% of the page" : ""}
                   </label>
                 )}
+                <select
+                  aria-label="A/B test group"
+                  className="border border-border rounded-lg px-2 py-1"
+                  value={t.variant ?? ""}
+                  onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, variant: e.target.value as "" | "A" | "B" } : x)))}
+                >
+                  <option value="">Everyone</option>
+                  <option value="A">A/B test: group A</option>
+                  <option value="B">A/B test: group B</option>
+                </select>
                 <button
                   type="button"
                   className="ml-auto text-danger text-xs font-semibold"
@@ -315,6 +329,27 @@ export default function WidgetSettingsPage() {
               />
             </div>
           ))}
+          {results.length > 0 && (
+            <div className="mb-3 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-xs">
+                <caption className="text-left px-3 py-2 text-fg-muted">Results, last 30 days (saved messages only)</caption>
+                <thead className="bg-surface-2 text-left text-fg-muted">
+                  <tr><th className="px-3 py-1">Message</th><th className="px-3 py-1">Group</th><th className="px-3 py-1">Shown</th><th className="px-3 py-1">Clicked</th><th className="px-3 py-1">Click rate</th></tr>
+                </thead>
+                <tbody>
+                  {results.map((r) => (
+                    <tr key={r.trigger_id} className="border-t border-border">
+                      <td className="px-3 py-1 max-w-[220px] truncate">{r.message}</td>
+                      <td className="px-3 py-1">{r.variant || "All"}</td>
+                      <td className="px-3 py-1">{r.shown}</td>
+                      <td className="px-3 py-1">{r.clicked}</td>
+                      <td className="px-3 py-1">{r.click_rate === null ? "—" : `${Math.round(r.click_rate * 100)}%`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {triggers.length < 5 && (
             <button
               type="button"

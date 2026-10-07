@@ -5,10 +5,11 @@
 
 export interface Trigger {
   id: string;
-  type: "time" | "scroll" | "exit";
-  value: number; // seconds for "time", percent for "scroll", unused for "exit"
+  type: "time" | "scroll" | "exit" | "visits";
+  value: number; // seconds for "time", percent for "scroll", visit number for "visits", unused for "exit"
   message: string;
   page_pattern: string; // empty = every page; trailing * = prefix match; else substring
+  variant?: "" | "A" | "B"; // A/B test group this message is for; empty = everyone
 }
 
 const KEY = (botId: string, id: string) => `sanchijawab:${botId}:trigger:${id}`;
@@ -17,6 +18,37 @@ export function pageMatches(pattern: string, pathname: string): boolean {
   const p = (pattern || "").trim();
   if (!p) return true;
   return p.endsWith("*") ? pathname.startsWith(p.slice(0, -1)) : pathname.includes(p);
+}
+
+/** Counts this browser session as one visit (once per tab session) and returns the lifetime visit number. */
+export function countVisit(botId: string): number {
+  try {
+    const sessionKey = `sanchijawab:${botId}:session`;
+    const visitsKey = `sanchijawab:${botId}:visits`;
+    let visits = Number(localStorage.getItem(visitsKey) || "0");
+    if (!sessionStorage.getItem(sessionKey)) {
+      sessionStorage.setItem(sessionKey, "1");
+      visits += 1;
+      localStorage.setItem(visitsKey, String(visits));
+    }
+    return visits || 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Stable A or B group per visitor, so one person always sees the same variant. */
+export function abGroup(botId: string): "A" | "B" {
+  const key = `sanchijawab:${botId}:abgroup`;
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved === "A" || saved === "B") return saved;
+    const group = Math.random() < 0.5 ? "A" : "B";
+    localStorage.setItem(key, group);
+    return group;
+  } catch {
+    return "A";
+  }
 }
 
 function alreadyFired(botId: string, id: string): boolean {
@@ -53,10 +85,19 @@ export function watchTriggers(
     onFire(t);
   };
 
+  const group = abGroup(botId);
+  const visits = countVisit(botId);
+
   for (const t of triggers) {
     if (alreadyFired(botId, t.id) || !pageMatches(t.page_pattern, pathname)) continue;
+    if (t.variant && t.variant !== group) continue;
 
-    if (t.type === "time") {
+    if (t.type === "visits") {
+      if (visits >= t.value) {
+        const timer = window.setTimeout(() => fire(t), 1000);
+        cleanups.push(() => window.clearTimeout(timer));
+      }
+    } else if (t.type === "time") {
       const timer = window.setTimeout(() => fire(t), Math.max(1, t.value) * 1000);
       cleanups.push(() => window.clearTimeout(timer));
     } else if (t.type === "scroll") {

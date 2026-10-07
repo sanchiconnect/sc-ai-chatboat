@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { watchTriggers, type Trigger } from "./triggers";
-import { streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, type ChatHistoryTurn } from "./api";
+import {
+  streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, sendTriggerEvent,
+  type ChatHistoryTurn,
+} from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
 import { stringsFor, type WidgetStrings } from "./i18n";
@@ -205,7 +208,7 @@ export function Widget(props: WidgetProps) {
   const [showCsat, setShowCsat] = useState(false);
   const [csatDone, setCsatDone] = useState(false);
   const [identity, setIdentity] = useState<{ name?: string; email?: string }>({});
-  const [nudge, setNudge] = useState<string | null>(null);
+  const [nudge, setNudge] = useState<{ id: string; message: string } | null>(null);
   const visitorIdRef = useRef<string>(getOrCreateVisitorId(props.botId));
   const lastPolledIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -244,7 +247,10 @@ export function Widget(props: WidgetProps) {
   useEffect(() => {
     if (open || props.triggers.length === 0 || messages.length > 0) return;
     return watchTriggers(
-      props.botId, props.triggers, window.location.pathname, window.innerWidth <= 480, (t) => setNudge(t.message),
+      props.botId, props.triggers, window.location.pathname, window.innerWidth <= 480, (t) => {
+        setNudge({ id: t.id, message: t.message });
+        sendTriggerEvent(props.apiBase, props.botId, t.id, "shown", visitorIdRef.current);
+      },
     );
   }, [open, props.triggers, props.botId, messages.length]);
 
@@ -607,7 +613,15 @@ export function Widget(props: WidgetProps) {
 
       {nudge && !open && (
         <div class="sj-nudge" role="status">
-          <button class="sj-nudge-text" onClick={() => setOpen(true)}>{nudge}</button>
+          <button
+            class="sj-nudge-text"
+            onClick={() => {
+              sendTriggerEvent(props.apiBase, props.botId, nudge.id, "clicked", visitorIdRef.current);
+              setOpen(true);
+            }}
+          >
+            {nudge.message}
+          </button>
           <button class="sj-nudge-x" aria-label={t.closeChat} onClick={() => setNudge(null)}>{"✕"}</button>
         </div>
       )}

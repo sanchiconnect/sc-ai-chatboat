@@ -463,6 +463,22 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class TriggerEvent(Base):
+    """One "shown" or "clicked" of a proactive message (Phase 2 A/B testing).
+    No visitor identity beyond the widget's own anonymous id."""
+
+    __tablename__ = "trigger_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), index=True)
+    trigger_id: Mapped[str] = mapped_column(String(32), index=True)
+    variant: Mapped[str] = mapped_column(String(4), default="")
+    event: Mapped[str] = mapped_column(String(8))  # shown | clicked
+    visitor_id: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class PlatformSetting(Base):
     """Platform-wide knobs a super admin can change without a deploy. The
     allowed keys and their validation live in services/platform_settings.py."""

@@ -37,7 +37,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export interface WidgetTrigger {
-  id: string; type: "time" | "scroll" | "exit"; value: number; message: string; page_pattern: string;
+  id: string; type: "time" | "scroll" | "exit" | "visits"; value: number; message: string; page_pattern: string;
+  variant?: "" | "A" | "B";
 }
 
 export interface BusinessHours {
@@ -388,6 +389,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question, answer }),
     }),
+
+  triggerAnalytics: (botId: string) =>
+    request<
+      { trigger_id: string; type: string; message: string; variant: string; shown: number; clicked: number; click_rate: number | null }[]
+    >(`/v1/bots/${botId}/analytics/triggers`),
 
   suggestReply: (conversationId: string) =>
     request<{ suggestion: string; sources: string[] }>(`/v1/conversations/${conversationId}/suggest-reply`, {

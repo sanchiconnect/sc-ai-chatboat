@@ -93,6 +93,21 @@ export async function pollMessages(
   }
 }
 
+export async function sendTriggerEvent(
+  apiBase: string, botId: string, triggerId: string, event: "shown" | "clicked", visitorId: string,
+): Promise<void> {
+  try {
+    await fetch(`${apiBase}/public/w/${botId}/trigger-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trigger_id: triggerId, event, visitor_id: visitorId }),
+      keepalive: true,
+    });
+  } catch {
+    /* analytics only — never disturb the visitor */
+  }
+}
+
 export async function rateMessage(apiBase: string, botId: string, messageId: string, rating: 1 | -1): Promise<boolean> {
   try {
     const resp = await fetch(`${apiBase}/public/w/${botId}/messages/${messageId}/rating`, {
