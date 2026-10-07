@@ -65,6 +65,8 @@ jobs:
           # outlives this ephemeral CI database. Locally this comes from
           # .env (gitignored); CI has no .env, so it needs a value here.
           PAYMENT_SECRET_KEY: "SIPYi-D42vUVpzQssFgIft0ibWVyOgY74VCpWqifqIk="
+          # Test-only too — the app refuses to sign tokens without a JWT_SECRET.
+          JWT_SECRET: "ci-only-jwt-secret-not-used-anywhere-else"
         run: uv run pytest -q
 
   admin:

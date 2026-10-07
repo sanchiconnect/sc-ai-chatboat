@@ -76,6 +76,7 @@ from .services.plan_limits import (
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
 from .services.ratelimit import rate_limit
+from .services.urlsafety import UnsafeURLError, assert_public_url
 from .services.routing import is_within_business_hours, route_team
 from .services.tracing import get_langfuse
 
@@ -502,6 +503,13 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
         if bot is None:
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        for webhook in (body.crm_webhook_url, body.slack_webhook_url):
+            if webhook:
+                try:
+                    assert_public_url(webhook)
+                except UnsafeURLError as e:
+                    raise HTTPException(422, str(e))
 
         for field in (
             "name", "persona", "instructions", "model_tier", "avatar_id", "avatar_name",
@@ -959,6 +967,10 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
         raise HTTPException(422, "You must confirm you own this site or have permission to crawl it")
     if not 5 <= body.rescan_interval_days <= 365:
         raise HTTPException(422, "rescan_interval_days must be between 5 and 365")
+    try:
+        assert_public_url(body.url)
+    except UnsafeURLError as e:
+        raise HTTPException(422, str(e))
 
     async with SessionLocal() as session:
         bot = await session.get(Bot, body.bot_id)
@@ -2824,13 +2836,17 @@ class ContactRequest(BaseModel):
 
 @app.post("/public/contact", dependencies=[Depends(rate_limit("contact", limit=5, window_seconds=300))])
 async def submit_contact(body: ContactRequest):
-    html = f"""
-    <p><strong>From:</strong> {body.name} &lt;{body.email}&gt;</p>
-    <p><strong>Company:</strong> {body.company or "—"}</p>
+    # Visitor-supplied text goes into an HTML email read by staff — escape it
+    # so a crafted name/message can't inject markup or links (OWASP A03).
+    esc = html.escape
+    body_html = f"""
+    <p><strong>From:</strong> {esc(body.name)} &lt;{esc(body.email)}&gt;</p>
+    <p><strong>Company:</strong> {esc(body.company) or "—"}</p>
     <p><strong>Message:</strong></p>
-    <p>{body.message.replace(chr(10), "<br>")}</p>
+    <p>{esc(body.message).replace(chr(10), "<br>")}</p>
     """
-    email_sent = await send_email(settings.support_email, f"Contact form: {body.name}", html)
+    subject_name = " ".join(body.name.split())[:100]  # no newlines in the header
+    email_sent = await send_email(settings.support_email, f"Contact form: {subject_name}", body_html)
     return {"email_sent": email_sent}
 
 

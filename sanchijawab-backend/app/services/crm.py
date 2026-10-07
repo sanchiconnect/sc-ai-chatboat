@@ -9,6 +9,8 @@ import logging
 
 import httpx
 
+from .urlsafety import UnsafeURLError, assert_public_url
+
 logger = logging.getLogger("sanchijawab.crm")
 
 TIMEOUT_SECONDS = 8.0
@@ -28,12 +30,13 @@ async def push_lead(webhook_url: str, *, lead_id: str, bot_id: str, bot_name: st
         "phone": phone,
     }
     try:
+        assert_public_url(webhook_url)
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             resp = await client.post(webhook_url, json=payload)
         if resp.status_code >= 400:
             logger.warning("CRM webhook for lead %s returned %d", lead_id, resp.status_code)
             return False
         return True
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, UnsafeURLError) as e:
         logger.warning("CRM webhook for lead %s failed: %s", lead_id, e)
         return False

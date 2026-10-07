@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..models import Bot, Conversation, Membership, Notification, User
 from .email import send_email
+from .urlsafety import UnsafeURLError, assert_public_url
 
 logger = logging.getLogger("sanchijawab.notifications")
 SLACK_TIMEOUT_SECONDS = 8.0
@@ -25,13 +26,14 @@ SLACK_TIMEOUT_SECONDS = 8.0
 
 async def _post_slack(webhook_url: str, *, text: str) -> bool:
     try:
+        assert_public_url(webhook_url)
         async with httpx.AsyncClient(timeout=SLACK_TIMEOUT_SECONDS) as client:
             resp = await client.post(webhook_url, json={"text": text})
         if resp.status_code >= 400:
             logger.warning("Slack webhook returned %d", resp.status_code)
             return False
         return True
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, UnsafeURLError) as e:
         logger.warning("Slack webhook failed: %s", e)
         return False
 

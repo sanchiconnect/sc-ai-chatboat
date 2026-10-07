@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     embed_dim: int = 384
     # Per-IP rate limiting on login/signup and public widget routes (SAN-1126).
     rate_limit_enabled: bool = True
+    # SSRF guard (app/services/urlsafety.py): crawl/webhook URLs must resolve
+    # to public addresses. Turn on only to crawl local sites in development.
+    allow_private_urls: bool = False
 
     # Optional rerank step (FR-C hybrid retrieval): retrieve 30, rerank to
     # top_k. Off when cohere_api_key is empty.

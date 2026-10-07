@@ -28,6 +28,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
+def _secret() -> str:
+    """Signing key. An empty/short key would make every token forgeable, so
+    refuse to sign or verify at all rather than silently run insecure."""
+    if len(settings.jwt_secret) < 16:
+        raise RuntimeError("JWT_SECRET must be set to a random string of at least 16 characters")
+    return settings.jwt_secret
+
+
 def create_access_token(user_id: str, tenant_id: str) -> str:
     payload = {
         "sub": user_id,
@@ -35,7 +43,7 @@ def create_access_token(user_id: str, tenant_id: str) -> str:
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRES_HOURS),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def create_staff_access_token(user_id: str) -> str:
@@ -50,7 +58,7 @@ def create_staff_access_token(user_id: str) -> str:
         "type": "staff_access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=STAFF_ACCESS_TOKEN_EXPIRES_HOURS),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def create_email_verify_token(user_id: str) -> str:
@@ -59,7 +67,7 @@ def create_email_verify_token(user_id: str) -> str:
         "type": "email_verify",
         "exp": datetime.now(timezone.utc) + timedelta(hours=EMAIL_VERIFY_TOKEN_EXPIRES_HOURS),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def create_invite_token(user_id: str, workspace_id: str, role: str) -> str:
@@ -70,12 +78,12 @@ def create_invite_token(user_id: str, workspace_id: str, role: str) -> str:
         "type": "invite",
         "exp": datetime.now(timezone.utc) + timedelta(hours=INVITE_TOKEN_EXPIRES_HOURS),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def decode_token(token: str, expected_type: str) -> dict | None:
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _secret(), algorithms=[ALGORITHM])
     except JWTError:
         return None
     if payload.get("type") != expected_type:
