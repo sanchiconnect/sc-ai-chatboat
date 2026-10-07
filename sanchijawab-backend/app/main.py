@@ -45,6 +45,7 @@ from .models import (
     AuditLog, BillingProfile, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
+from . import public_api
 from .services import crm, llm, privacy, retrieval, storage
 from .services.auth import (
     create_access_token,
@@ -94,6 +95,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="SanchiJawab API", lifespan=lifespan)
+app.include_router(public_api.router)  # API-key REST + MCP server (SAN-1806)
 
 # The widget is embedded on arbitrary customer domains by design — the
 # public/w/* routes MUST be callable cross-origin from anywhere, there's no

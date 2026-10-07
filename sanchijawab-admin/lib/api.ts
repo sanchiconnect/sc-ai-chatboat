@@ -395,6 +395,19 @@ export const api = {
       { trigger_id: string; type: string; message: string; variant: string; shown: number; clicked: number; click_rate: number | null }[]
     >(`/v1/bots/${botId}/analytics/triggers`),
 
+  listApiKeys: (workspaceId: string) =>
+    request<{ key_id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked: boolean }[]>(
+      `/v1/workspaces/${workspaceId}/api-keys`,
+    ),
+
+  createApiKey: (workspaceId: string, name: string) =>
+    request<{ key_id: string; name: string; key: string; note: string }>(`/v1/workspaces/${workspaceId}/api-keys`, {
+      method: "POST", body: JSON.stringify({ name }),
+    }),
+
+  revokeApiKey: (workspaceId: string, keyId: string) =>
+    request<{ revoked: boolean }>(`/v1/workspaces/${workspaceId}/api-keys/${keyId}`, { method: "DELETE" }),
+
   suggestReply: (conversationId: string) =>
     request<{ suggestion: string; sources: string[] }>(`/v1/conversations/${conversationId}/suggest-reply`, {
       method: "POST",

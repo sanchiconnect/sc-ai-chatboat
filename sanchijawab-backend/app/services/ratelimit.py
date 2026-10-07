@@ -43,5 +43,20 @@ def rate_limit(name: str, *, limit: int, window_seconds: int):
     return dependency
 
 
+def check(key: str, *, limit: int, window_seconds: int) -> None:
+    """Same sliding window as rate_limit(), for callers that already know their
+    own key (for example an API key id) rather than the client IP."""
+    if not settings.rate_limit_enabled:
+        return
+    now = time.monotonic()
+    window = _hits[key]
+    while window and now - window[0] > window_seconds:
+        window.popleft()
+    if len(window) >= limit:
+        retry_after = max(1, int(window_seconds - (now - window[0])))
+        raise HTTPException(429, "Too many requests — please slow down.", headers={"Retry-After": str(retry_after)})
+    window.append(now)
+
+
 def reset() -> None:
     _hits.clear()

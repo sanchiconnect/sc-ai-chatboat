@@ -6,6 +6,86 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { resolveWorkspace } from "@/lib/workspace-store";
 
+type ApiKeyRow = Awaited<ReturnType<typeof api.listApiKeys>>[number];
+
+function ApiKeysSection({ workspaceId }: { workspaceId: string }) {
+  const [keys, setKeys] = useState<ApiKeyRow[]>([]);
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const load = () => api.listApiKeys(workspaceId).then(setKeys).catch(() => {});
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      const res = await api.createApiKey(workspaceId, name.trim());
+      setFresh(res.key);
+      setName("");
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to create key");
+    }
+  }
+
+  async function revoke(id: string) {
+    if (!window.confirm("Revoke this key? Anything using it stops working immediately.")) return;
+    await api.revokeApiKey(workspaceId, id);
+    load();
+  }
+
+  return (
+    <section className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5 max-w-2xl space-y-3">
+      <h2 className="text-[16px] font-semibold">API keys</h2>
+      <p className="text-[12.5px] text-fg-muted">
+        Let your own software, or an AI assistant such as Claude, read this workspace&apos;s conversations and leads and ask
+        your assistants questions. REST: <code>{apiBase}/api/v1/bots</code> &middot; MCP server: <code>{apiBase}/mcp</code>.
+        Send the key as <code>Authorization: Bearer &lt;key&gt;</code>.
+      </p>
+      {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3">{error}</div>}
+      {fresh && (
+        <div className="text-[13px] bg-warning-soft text-warning rounded-lg p-3 space-y-1" role="status">
+          <p className="font-semibold">Copy this key now. It won&apos;t be shown again.</p>
+          <code className="block break-all select-all text-fg">{fresh}</code>
+          <button type="button" className="text-[12px] font-semibold underline" onClick={() => setFresh(null)}>I&apos;ve saved it</button>
+        </div>
+      )}
+      <form onSubmit={create} className="flex gap-2">
+        <input
+          required maxLength={100} aria-label="Key name" placeholder="Name, e.g. Support dashboard"
+          className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
+          value={name} onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" className="bg-accent text-white rounded-lg px-4 py-2 text-[13px] font-semibold">Create key</button>
+      </form>
+      <ul className="divide-y divide-border text-[13px]">
+        {keys.map((k) => (
+          <li key={k.key_id} className="py-2 flex items-center justify-between gap-3">
+            <div className={k.revoked ? "opacity-50" : ""}>
+              <div className="font-medium">{k.name} <span className="font-mono text-fg-faint">{k.prefix}…</span></div>
+              <div className="text-[11.5px] text-fg-faint">
+                Created {new Date(k.created_at + "Z").toLocaleDateString()} &middot;{" "}
+                {k.last_used_at ? `last used ${new Date(k.last_used_at + "Z").toLocaleString()}` : "never used"}
+                {k.revoked && " · revoked"}
+              </div>
+            </div>
+            {!k.revoked && (
+              <button type="button" onClick={() => revoke(k.key_id)} className="text-danger text-[12.5px] font-semibold">Revoke</button>
+            )}
+          </li>
+        ))}
+        {keys.length === 0 && <li className="py-2 text-fg-faint">No keys yet.</li>}
+      </ul>
+    </section>
+  );
+}
+
 export default function WorkspaceSettingsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("…");
@@ -93,6 +173,8 @@ export default function WorkspaceSettingsPage() {
             </button>
           )}
         </form>
+
+        {canEdit && workspaceId && <ApiKeysSection workspaceId={workspaceId} />}
       </main>
     </div>
   );
