@@ -27,6 +27,25 @@ def _is_decline(text: str) -> bool:
     return any(m in low for m in DECLINE_MARKERS)
 
 
+MAX_SOURCES = 3
+
+
+def pick_sources(chunks: list[dict], limit: int = MAX_SOURCES) -> list[dict]:
+    """Source links shown under an answer: unique page URLs from the
+    best-ranked chunks, capped. Showing every retrieved chunk (6) made a
+    one-line answer look like it cited half the site."""
+    sources: list[dict] = []
+    seen: set[str] = set()
+    for c in chunks:
+        url = c.get("url")
+        if url and url not in seen:
+            seen.add(url)
+            sources.append({"url": url, "chunk_id": c["chunk_id"]})
+            if len(sources) == limit:
+                break
+    return sources
+
+
 def _keyword_list(raw: str) -> list[str]:
     """handoff_keywords is stored as one string, newline- or comma-
     separated — same convention as Source.include_patterns."""
@@ -167,12 +186,7 @@ async def answer_stream(
         sources: list[dict] = []
         follow_ups: list[str] = []
         if not declined:
-            seen: set[str] = set()
-            for c in chunks:
-                url = c.get("url")
-                if url and url not in seen:
-                    seen.add(url)
-                    sources.append({"url": url, "chunk_id": c["chunk_id"]})
+            sources = pick_sources(chunks)
             # Follow-up quick replies (SAN-1096, FR-C8) — only worth
             # suggesting more questions when this one actually got a real,
             # grounded answer; a decline has nothing to follow up on.
