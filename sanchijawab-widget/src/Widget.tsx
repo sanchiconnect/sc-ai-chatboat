@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { streamChat, pollMessages, submitLead, rateMessage, type ChatHistoryTurn } from "./api";
+import { streamChat, pollMessages, submitLead, rateMessage, emailTranscript, type ChatHistoryTurn } from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
 import { stringsFor, type WidgetStrings } from "./i18n";
@@ -20,6 +20,7 @@ export interface WidgetProps {
   starterQuestions: string[];
   hideBranding: boolean;
   locale: string;
+  theme: "light" | "dark";
 }
 
 interface Message {
@@ -162,6 +163,9 @@ export function Widget(props: WidgetProps) {
   const [handedOff, setHandedOff] = useState(false);
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [consent, setConsent] = useState<"accepted" | "declined" | null>(() => loadConsent(props.botId));
+  const [emailFormOpen, setEmailFormOpen] = useState(false);
+  const [emailValue, setEmailValue] = useState("");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const visitorIdRef = useRef<string>(getOrCreateVisitorId(props.botId));
   const lastPolledIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -277,7 +281,7 @@ export function Widget(props: WidgetProps) {
 
   return (
     <div
-      class={`sj-root ${props.position === "left" ? "sj-pos-left" : ""}`}
+      class={`sj-root ${props.position === "left" ? "sj-pos-left" : ""} ${props.theme === "dark" ? "sj-theme-dark" : ""}`}
       style={{ "--sj-offset-x": `${props.offsetX}px`, "--sj-offset-y": `${props.offsetY}px` }}
     >
       {open && (
@@ -299,11 +303,51 @@ export function Widget(props: WidgetProps) {
               >
                 {"\u2B07"}
               </button>
+              {conversationId && (
+                <button
+                  class="sj-close"
+                  onClick={() => {
+                    setEmailStatus("idle");
+                    setEmailFormOpen((o) => !o);
+                  }}
+                  aria-label={t.emailTranscript}
+                  title={t.emailTranscript}
+                >
+                  {"\u2709"}
+                </button>
+              )}
               <button class="sj-close" onClick={() => setOpen(false)} aria-label={t.closeChat}>
                 {"\u2715"}
               </button>
             </div>
           </div>
+
+          {emailFormOpen && conversationId && (
+            <form
+              class="sj-email-transcript"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setEmailStatus("sending");
+                const ok = await emailTranscript(props.apiBase, props.botId, conversationId, emailValue);
+                setEmailStatus(ok ? "sent" : "failed");
+              }}
+            >
+              <input
+                class="sj-input"
+                type="email"
+                required
+                placeholder={t.emailTranscriptPlaceholder}
+                value={emailValue}
+                onInput={(e) => setEmailValue((e.target as HTMLInputElement).value)}
+                disabled={emailStatus === "sending" || emailStatus === "sent"}
+              />
+              <button class="sj-send" type="submit" disabled={emailStatus === "sending" || emailStatus === "sent"}>
+                {t.emailTranscriptSend}
+              </button>
+              {emailStatus === "sent" && <p class="sj-email-status sj-email-status-ok">{t.emailTranscriptSent}</p>}
+              {emailStatus === "failed" && <p class="sj-email-status sj-email-status-error">{t.emailTranscriptFailed}</p>}
+            </form>
+          )}
 
           <div class="sj-messages" ref={listRef}>
             {messages.length === 0 && (

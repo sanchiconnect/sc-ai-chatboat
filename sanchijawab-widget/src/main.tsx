@@ -22,6 +22,7 @@ interface RemoteConfig {
   starter_questions?: string[];
   hide_branding?: boolean;
   locale?: string;
+  theme?: string;
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -118,6 +119,7 @@ async function boot() {
       starterQuestions={remote?.starter_questions || []}
       hideBranding={remote?.hide_branding ?? false}
       locale={remote?.locale || ds.locale || "en"}
+      theme={remote?.theme === "dark" ? "dark" : "light"}
     />,
     mount,
   );

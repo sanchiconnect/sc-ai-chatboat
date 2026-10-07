@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import json
 import uuid
 from collections import Counter
@@ -1381,6 +1382,7 @@ async def public_widget_config(bot_id: str, request: Request):
             # own answers already reply in the visitor's detected language
             # (FR-C6) independent of this setting.
             "locale": (config.locale if config else None) or "en",
+            "theme": (config.theme if config else None) or "light",
         }
 
 
@@ -1609,6 +1611,42 @@ async def public_create_lead(bot_id: str, body: LeadRequest, request: Request, b
                 _push_lead_and_record, bot_id, bot.name, bot.crm_webhook_url, lead.id, body.name, body.email, body.phone,
             )
         return {"lead_id": lead.id}
+
+
+ROLE_LABEL_FOR_TRANSCRIPT = {"visitor": "You", "bot": "Assistant", "agent": "Agent", "system": "System"}
+
+
+class EmailTranscriptRequest(BaseModel):
+    conversation_id: str
+    email: EmailStr
+
+
+@app.post("/public/w/{bot_id}/transcript/email")
+async def email_transcript(bot_id: str, body: EmailTranscriptRequest, request: Request):
+    """The other half of FR-W10 — the widget's download button already
+    saves a transcript client-side; this emails the same content instead,
+    for a visitor who'd rather have it in their inbox than their Downloads
+    folder."""
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        _enforce_domain_allowlist(bot, request)
+
+        conv = await session.get(Conversation, body.conversation_id)
+        if conv is None or conv.bot_id != bot_id:
+            raise HTTPException(404, "Conversation not found")
+
+        rows = await list_messages(session, conversation_id=body.conversation_id)
+
+    lines = [f"{ROLE_LABEL_FOR_TRANSCRIPT.get(m.role, m.role)}: {m.content}" for m in rows if m.content]
+    if not lines:
+        raise HTTPException(400, "This conversation has no messages yet")
+
+    html_body = "<p>" + "</p><p>".join(f"<strong>{html.escape(label)}:</strong> {html.escape(rest)}" for label, rest in
+                                        (line.split(": ", 1) for line in lines)) + "</p>"
+    sent = await send_email(body.email, f"Your conversation with {bot.name}", html_body)
+    return {"sent": sent}
 
 
 # ─── Inbox (FR-H1) — dashboard-side, auth required ───────────────────────

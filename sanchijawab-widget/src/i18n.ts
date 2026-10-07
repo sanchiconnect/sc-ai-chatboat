@@ -20,6 +20,11 @@ export interface WidgetStrings {
   source: string;
   sourceN: (n: number) => string;
   connectingToTeam: string;
+  emailTranscript: string;
+  emailTranscriptPlaceholder: string;
+  emailTranscriptSend: string;
+  emailTranscriptSent: string;
+  emailTranscriptFailed: string;
 }
 
 const EN: WidgetStrings = {
@@ -44,6 +49,11 @@ const EN: WidgetStrings = {
   source: "Source",
   sourceN: (n) => `Source ${n}`,
   connectingToTeam: "Connecting you with our team — someone will be with you shortly.",
+  emailTranscript: "Email transcript",
+  emailTranscriptPlaceholder: "Your email address",
+  emailTranscriptSend: "Send",
+  emailTranscriptSent: "Sent! Check your inbox.",
+  emailTranscriptFailed: "Couldn't send that — try again?",
 };
 
 // Widget UI chrome only (FR-W8) — the bot's own answers already reply in
@@ -71,6 +81,11 @@ const HI: WidgetStrings = {
   source: "स्रोत",
   sourceN: (n) => `स्रोत ${n}`,
   connectingToTeam: "आपको हमारी टीम से जोड़ा जा रहा है — कोई जल्द ही आपसे संपर्क करेगा।",
+  emailTranscript: "बातचीत ईमेल करें",
+  emailTranscriptPlaceholder: "आपका ईमेल पता",
+  emailTranscriptSend: "भेजें",
+  emailTranscriptSent: "भेज दिया! अपना इनबॉक्स देखें।",
+  emailTranscriptFailed: "भेज नहीं सके — फिर कोशिश करें?",
 };
 
 const LOCALES: Record<string, WidgetStrings> = { en: EN, hi: HI };

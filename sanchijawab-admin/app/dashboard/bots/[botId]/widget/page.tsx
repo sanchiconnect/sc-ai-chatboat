@@ -9,6 +9,7 @@ const PRESET_COLORS = ["#3D46C9", "#059669", "#DC2626", "#111827"];
 export default function WidgetSettingsPage() {
   const { botId } = useParams<{ botId: string }>();
   const [color, setColor] = useState("#3D46C9");
+  const [theme, setTheme] = useState("light");
   const [position, setPosition] = useState("right");
   const [welcome, setWelcome] = useState("");
   const [header, setHeader] = useState("");
@@ -31,6 +32,7 @@ export default function WidgetSettingsPage() {
       .getWidgetConfig(botId)
       .then((cfg) => {
         setColor(cfg.primary_color);
+        setTheme(cfg.theme || "light");
         setPosition(cfg.position);
         setWelcome(cfg.texts.welcome || "");
         setHeader(cfg.texts.header || "");
@@ -55,7 +57,7 @@ export default function WidgetSettingsPage() {
     setSaved(false);
     try {
       await api.updateWidgetConfig(botId, {
-        primary_color: color, position, welcome, header,
+        primary_color: color, theme, position, welcome, header,
         require_consent: requireConsent, consent_text: consentText,
         offset_x: offsetX, offset_y: offsetY,
         desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
@@ -156,6 +158,19 @@ export default function WidgetSettingsPage() {
           >
             <option value="en">English</option>
             <option value="hi">हिन्दी (Hindi)</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="widget-theme" className="text-sm font-medium">Theme</label>
+          <select
+            id="widget-theme"
+            className="mt-1 w-full border border-border rounded-lg px-3 py-2"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+          >
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
           </select>
         </div>
 

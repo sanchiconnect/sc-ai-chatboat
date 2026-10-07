@@ -123,3 +123,23 @@ export async function submitLead(
     return false;
   }
 }
+
+export async function emailTranscript(
+  apiBase: string,
+  botId: string,
+  conversationId: string,
+  email: string,
+): Promise<boolean> {
+  try {
+    const resp = await fetch(`${apiBase}/public/w/${botId}/transcript/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, email }),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return Boolean(data.sent);
+  } catch {
+    return false;
+  }
+}

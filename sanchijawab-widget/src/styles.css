@@ -2,7 +2,37 @@
   all: initial;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
-  color: #1a1a1a;
+  color: var(--sj-text);
+
+  --sj-text: #1a1a1a;
+  --sj-panel-bg: #fff;
+  --sj-messages-bg: #f7f7f8;
+  --sj-bubble-bg: #fff;
+  --sj-border: #e5e5e8;
+  --sj-muted: #666;
+  --sj-input-bg: #fff;
+  --sj-chip-bg: #fff;
+  --sj-chip-border: #d9d9e0;
+  --sj-chip-hover: #f5f5f8;
+  --sj-consent-bg: #fafafa;
+  --sj-code-bg: rgba(0, 0, 0, 0.06);
+  --sj-powered: #999;
+}
+
+.sj-root.sj-theme-dark {
+  --sj-text: #f0f0f2;
+  --sj-panel-bg: #1e1e24;
+  --sj-messages-bg: #16161a;
+  --sj-bubble-bg: #2a2a32;
+  --sj-border: #3a3a44;
+  --sj-muted: #9a9aa5;
+  --sj-input-bg: #2a2a32;
+  --sj-chip-bg: #2a2a32;
+  --sj-chip-border: #44444e;
+  --sj-chip-hover: #35353e;
+  --sj-consent-bg: #202026;
+  --sj-code-bg: rgba(255, 255, 255, 0.08);
+  --sj-powered: #77777f;
 }
 
 .sj-launcher {
@@ -40,7 +70,7 @@
   width: 360px;
   height: 520px;
   max-height: 70vh;
-  background: #fff;
+  background: var(--sj-panel-bg);
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
   display: flex;
@@ -149,7 +179,7 @@
 }
 
 .sj-bubble code {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--sj-code-bg);
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 0.9em;
@@ -162,7 +192,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f7f7f8;
+  background: var(--sj-messages-bg);
 }
 
 .sj-bubble {
@@ -176,8 +206,8 @@
 
 .sj-bubble-bot {
   align-self: flex-start;
-  background: #fff;
-  border: 1px solid #e5e5e8;
+  background: var(--sj-bubble-bg);
+  border: 1px solid var(--sj-border);
 }
 
 .sj-bubble-visitor {
@@ -188,8 +218,8 @@
 
 .sj-bubble-agent {
   align-self: flex-start;
-  background: #fff;
-  border: 1px solid #e5e5e8;
+  background: var(--sj-bubble-bg);
+  border: 1px solid var(--sj-border);
   border-left: 3px solid #059669;
 }
 
@@ -216,10 +246,38 @@
 .sj-lead-skip {
   background: none;
   border: none;
-  color: #666;
+  color: var(--sj-muted);
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
+}
+
+.sj-email-transcript {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sj-border);
+  flex-wrap: wrap;
+}
+
+.sj-email-transcript .sj-input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.sj-email-status {
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
+}
+
+.sj-email-status-ok {
+  color: #059669;
+}
+
+.sj-email-status-error {
+  color: #dc2626;
 }
 
 .sj-sources {
@@ -241,9 +299,9 @@
 }
 
 .sj-chip {
-  border: 1px solid #d9d9e0;
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--sj-chip-border);
+  background: var(--sj-chip-bg);
+  color: var(--sj-text);
   border-radius: 999px;
   padding: 6px 12px;
   font-size: 12.5px;
@@ -252,7 +310,7 @@
 }
 
 .sj-chip:hover {
-  background: #f5f5f8;
+  background: var(--sj-chip-hover);
 }
 
 .sj-chip:disabled {
@@ -262,13 +320,13 @@
 
 .sj-consent-gate {
   padding: 10px 12px;
-  border-top: 1px solid #e5e5e8;
-  background: #fafafa;
+  border-top: 1px solid var(--sj-border);
+  background: var(--sj-consent-bg);
 }
 
 .sj-consent-text {
   font-size: 12px;
-  color: #444;
+  color: var(--sj-muted);
   margin: 0 0 8px;
   line-height: 1.4;
 }
@@ -281,12 +339,12 @@
 
 .sj-consent-decline {
   background: none;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sj-chip-border);
   border-radius: 8px;
   padding: 0 12px;
   font-size: 13px;
   cursor: pointer;
-  color: #444;
+  color: var(--sj-text);
 }
 
 .sj-consent-rethink {
@@ -301,14 +359,16 @@
 
 .sj-input-row {
   display: flex;
-  border-top: 1px solid #e5e5e8;
+  border-top: 1px solid var(--sj-border);
   padding: 8px;
   gap: 8px;
 }
 
 .sj-input {
   flex: 1;
-  border: 1px solid #e5e5e8;
+  border: 1px solid var(--sj-border);
+  background: var(--sj-input-bg);
+  color: var(--sj-text);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 14px;
@@ -326,7 +386,7 @@
 .sj-powered {
   text-align: center;
   font-size: 11px;
-  color: #999;
+  color: var(--sj-powered);
   padding: 4px 0 8px;
 }
 
