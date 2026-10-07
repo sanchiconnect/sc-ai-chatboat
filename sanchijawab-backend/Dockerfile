@@ -1,7 +1,8 @@
 # SanchiJawab API + worker image (same image, different command — see docker-compose.yml).
 # Heavy on purpose: it carries Chromium (website crawling + PDF invoices) and the
 # document parser's ML dependencies, so expect a multi-GB image and a long first build.
-FROM python:3.12-slim
+# bookworm, not the default (trixie): playwright 1.49 --with-deps asks for font packages trixie dropped.
+FROM python:3.12-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 

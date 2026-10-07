@@ -4,6 +4,20 @@ Full setup/prerequisites are in `README.md`. This is the copy-paste cheat
 sheet for day-to-day "just start everything" on Windows, plus the gotchas
 that actually came up running this project.
 
+## Fastest way: one command (for a demo)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-demo.ps1
+```
+
+It checks your setup and tells you exactly what to fix if anything is missing, then starts the database, applies
+migrations, opens the API, worker, dashboard and widget server in their own windows, waits until each answers, and finally
+asks a real question through the real AI pipeline to prove it works end to end. Services you already have running are left
+alone. Useful switches: `-Check` (report only, start nothing), `-Seed` (also load a demo account with real data; spends
+Gemini calls), `-NoBrowser`. Stop what it started with `scripts\stop-demo.ps1` (add `-Database` to stop the database too).
+
+If it says a port is taken by "another program": an old terminal is holding it (most often an `http.server` started in the
+wrong folder). Close that terminal and run the script again.
 ## Every time you sit down to work
 
 ```bash
