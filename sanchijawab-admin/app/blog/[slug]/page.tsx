@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { blogPosts } from "@/lib/blog-posts";
+import { getBlogPost } from "@/lib/content";
 
 export function generateStaticParams() {
   return blogPosts.map((p) => ({ slug: p.slug }));
@@ -12,14 +13,14 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.slug === slug);
+  const post = await getBlogPost(slug);
   if (!post) return {};
   return { title: post.title, description: post.excerpt };
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post = blogPosts.find((p) => p.slug === slug);
+  const post = await getBlogPost(slug);
   if (!post) notFound();
 
   return (

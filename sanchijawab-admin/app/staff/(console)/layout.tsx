@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getStaffToken, clearStaffToken, staffApi, StaffApiError } from "@/lib/staff-api";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -45,6 +46,8 @@ export default function StaffConsoleLayout({ children }: { children: React.React
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/staff" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Workspaces</Link>
+            <Link href="/staff/content" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Website content</Link>
             <span className="text-[12px] text-fg-faint hidden sm:inline">{email}</span>
             <ThemeToggle />
             <button

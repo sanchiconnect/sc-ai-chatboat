@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import html
 import json
+import re
 import uuid
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -40,7 +41,7 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
+    BillingProfile, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, privacy, storage
@@ -2063,11 +2064,26 @@ async def list_qa_pairs(bot_id: str, user: CurrentUser = Depends(get_current_use
 # page; editable only by a super admin, see deps.require_super_admin) ──────
 
 
+PLAN_LIMIT_FIELDS = ("max_messages_per_month", "max_pages", "max_files", "max_seats")
+
+
+def _apply_limits(plan: Plan, limits: dict[str, int | None]) -> None:
+    """A key set to null clears that cap (unlimited); a key left out is
+    untouched. Unknown keys and negative numbers are rejected."""
+    for key, value in limits.items():
+        if key not in PLAN_LIMIT_FIELDS:
+            raise HTTPException(422, f"Unknown limit {key!r}; allowed: {', '.join(PLAN_LIMIT_FIELDS)}")
+        if value is not None and value < 0:
+            raise HTTPException(422, f"{key} can't be negative")
+        setattr(plan, key, value)
+
+
 def _plan_out(p: Plan) -> dict:
     return {
         "plan_id": p.id, "name": p.name, "price_text": p.price_text, "tagline": p.tagline,
         "features": p.features_json or [], "is_active": p.is_active, "sort_order": p.sort_order,
         "amount": p.amount, "currency": p.currency, "purchasable": p.amount is not None,
+        "limits": {k: getattr(p, k) for k in PLAN_LIMIT_FIELDS},
     }
 
 
@@ -2098,6 +2114,7 @@ class PlanRequest(BaseModel):
     sort_order: int = 0
     amount: float | None = None  # None = display-only, not self-serve purchasable
     currency: str = "INR"
+    limits: dict[str, int | None] = {}
 
 
 @app.post("/v1/plans")
@@ -2108,6 +2125,7 @@ async def create_plan(body: PlanRequest, _admin: User = Depends(require_super_ad
             features_json=body.features, is_active=body.is_active, sort_order=body.sort_order,
             amount=body.amount, currency=body.currency,
         )
+        _apply_limits(plan, body.limits)
         session.add(plan)
         await session.commit()
         return _plan_out(plan)
@@ -2123,6 +2141,7 @@ class UpdatePlanRequest(BaseModel):
     amount: float | None = None
     clear_amount: bool = False  # amount=None alone is ambiguous with "don't change" — this disambiguates
     currency: str | None = None
+    limits: dict[str, int | None] | None = None  # e.g. {"max_pages": 500, "max_seats": null}
 
 
 @app.patch("/v1/plans/{plan_id}")
@@ -2149,6 +2168,8 @@ async def update_plan(plan_id: str, body: UpdatePlanRequest, _admin: User = Depe
             plan.amount = body.amount
         if body.currency is not None:
             plan.currency = body.currency
+        if body.limits is not None:
+            _apply_limits(plan, body.limits)
         await session.commit()
         return _plan_out(plan)
 
@@ -2160,6 +2181,116 @@ async def delete_plan(plan_id: str, _admin: User = Depends(require_super_admin))
         if plan is None:
             raise HTTPException(404, "Plan not found")
         await session.delete(plan)
+        await session.commit()
+        return {"deleted": True}
+
+
+# ─── Editable marketing content: legal pages + blog (super admin writes,
+# the public website reads published rows) ─────────────────────────────────
+
+CONTENT_KINDS = {"legal", "blog"}
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _content_out(c: ContentPage, *, with_body: bool = True) -> dict:
+    out = {
+        "kind": c.kind, "slug": c.slug, "title": c.title, "excerpt": c.excerpt,
+        "read_minutes": c.read_minutes, "published": c.published, "date": c.display_date,
+        "updated_at": c.updated_at.isoformat(), "updated_by": c.updated_by,
+    }
+    if with_body:
+        out["body"] = c.body
+    return out
+
+
+def _check_kind(kind: str) -> None:
+    if kind not in CONTENT_KINDS:
+        raise HTTPException(404, "Unknown content type")
+
+
+@app.get("/public/content/{kind}")
+async def list_public_content(kind: str):
+    _check_kind(kind)
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(ContentPage).where(ContentPage.kind == kind, ContentPage.published.is_(True))
+            )
+        ).scalars().all()
+        return [_content_out(c, with_body=False) for c in rows]
+
+
+@app.get("/public/content/{kind}/{slug}")
+async def get_public_content(kind: str, slug: str):
+    _check_kind(kind)
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(ContentPage).where(
+                    ContentPage.kind == kind, ContentPage.slug == slug, ContentPage.published.is_(True)
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Not found")
+        return _content_out(row)
+
+
+@app.get("/v1/content")
+async def list_all_content(_admin: User = Depends(get_current_staff_user)):
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(ContentPage).order_by(ContentPage.kind, ContentPage.slug))).scalars().all()
+        return [_content_out(c) for c in rows]
+
+
+class ContentRequest(BaseModel):
+    title: str
+    excerpt: str = ""
+    body: str = ""
+    read_minutes: int = 3
+    published: bool = False
+    date: str = ""  # YYYY-MM-DD shown on the page
+
+
+@app.put("/v1/content/{kind}/{slug}")
+async def upsert_content(kind: str, slug: str, body: ContentRequest, admin: User = Depends(get_current_staff_user)):
+    _check_kind(kind)
+    if not _SLUG_RE.match(slug) or len(slug) > 100:
+        raise HTTPException(422, "slug must be lowercase letters, numbers and hyphens")
+    if not body.title.strip():
+        raise HTTPException(422, "title can't be blank")
+    if len(body.body) > 100_000:
+        raise HTTPException(422, "body is too long (100,000 characters max)")
+    if body.date and not re.match(r"^\d{4}-\d{2}-\d{2}$", body.date):
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(select(ContentPage).where(ContentPage.kind == kind, ContentPage.slug == slug))
+        ).scalar_one_or_none()
+        if row is None:
+            row = ContentPage(kind=kind, slug=slug, title="")
+            session.add(row)
+        row.title = body.title.strip()
+        row.excerpt = body.excerpt[:500]
+        row.body = body.body
+        row.read_minutes = max(1, body.read_minutes)
+        row.published = body.published
+        row.display_date = body.date
+        row.updated_by = admin.email
+        await session.commit()
+        return _content_out(row)
+
+
+@app.delete("/v1/content/{kind}/{slug}")
+async def delete_content(kind: str, slug: str, _admin: User = Depends(get_current_staff_user)):
+    _check_kind(kind)
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(select(ContentPage).where(ContentPage.kind == kind, ContentPage.slug == slug))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Not found")
+        await session.delete(row)
         await session.commit()
         return {"deleted": True}
 

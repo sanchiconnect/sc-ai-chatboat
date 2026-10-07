@@ -3,15 +3,15 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { Card } from "@/components/ui/card";
-import { blogPosts } from "@/lib/blog-posts";
+import { getAllBlogPosts } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Blog",
   description: "Notes on building SanchiJawab — crawling, retrieval, and what makes an AI answer trustworthy.",
 };
 
-export default function BlogIndexPage() {
-  const posts = [...blogPosts].sort((a, b) => b.date.localeCompare(a.date));
+export default async function BlogIndexPage() {
+  const posts = await getAllBlogPosts();
 
   return (
     <>

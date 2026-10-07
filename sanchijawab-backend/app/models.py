@@ -18,7 +18,9 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import (
+    BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -412,6 +414,32 @@ class Plan(Base):
     max_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_files: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_seats: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ContentPage(Base):
+    """Marketing content a super admin edits from the dashboard instead of
+    shipping code: legal pages (kind="legal") and blog posts (kind="blog").
+    `body` is plain text — blank-line separated paragraphs, and a line
+    starting "## " begins a new headed section. The website falls back to its
+    built-in copy when no published row exists for a slug.
+    """
+
+    __tablename__ = "content_pages"
+    __table_args__ = (UniqueConstraint("kind", "slug", name="uq_content_kind_slug"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # legal | blog
+    slug: Mapped[str] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(255))
+    excerpt: Mapped[str] = mapped_column(String(500), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    read_minutes: Mapped[int] = mapped_column(Integer, default=3)
+    published: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Display date: a blog post's publish date, a legal page's "last updated".
+    display_date: Mapped[str] = mapped_column(String(10), default="")
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

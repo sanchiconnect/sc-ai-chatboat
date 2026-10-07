@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { LegalTemplate } from "@/components/marketing/legal/legal-template";
+import { CmsLegal } from "@/components/marketing/legal/cms-legal";
 
 export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function TermsPage() {
   return (
-    <LegalTemplate
+    <CmsLegal slug="terms"
       title="Terms of Service"
       updated="October 1, 2026"
       sections={[

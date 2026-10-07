@@ -39,6 +39,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return resp.json();
 }
 
+export interface StaffContentInput {
+  title: string; excerpt: string; body: string; read_minutes: number; published: boolean; date: string;
+}
+
+export interface StaffContentItem extends StaffContentInput {
+  kind: string; slug: string; updated_at: string; updated_by: string;
+}
+
 export interface StaffOverview {
   workspace_count: number;
   bot_count: number;
@@ -91,6 +99,14 @@ export const staffApi = {
     }),
 
   me: () => request<{ email: string }>("/v1/staff/me"),
+
+  listContent: () => request<StaffContentItem[]>("/v1/content"),
+
+  saveContent: (kind: string, slug: string, body: StaffContentInput) =>
+    request<StaffContentItem>(`/v1/content/${kind}/${slug}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  deleteContent: (kind: string, slug: string) =>
+    request<{ deleted: boolean }>(`/v1/content/${kind}/${slug}`, { method: "DELETE" }),
 
   overview: () => request<StaffOverview>("/v1/staff/overview"),
 

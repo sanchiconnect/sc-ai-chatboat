@@ -395,6 +395,7 @@ export const api = {
       {
         plan_id: string; name: string; price_text: string; tagline: string; features: string[];
         is_active: boolean; sort_order: number; amount: number | null; currency: string; purchasable: boolean;
+        limits: Record<string, number | null>;
       }[]
     >("/v1/plans"),
 
@@ -406,11 +407,12 @@ export const api = {
 
   createPlan: (body: {
     name: string; price_text?: string; tagline?: string; features?: string[]; is_active?: boolean;
-    sort_order?: number; amount?: number | null; currency?: string;
+    sort_order?: number; amount?: number | null; currency?: string; limits?: Record<string, number | null>;
   }) =>
     request<{
       plan_id: string; name: string; price_text: string; tagline: string; features: string[];
       is_active: boolean; sort_order: number; amount: number | null; currency: string; purchasable: boolean;
+        limits: Record<string, number | null>;
     }>("/v1/plans", { method: "POST", body: JSON.stringify(body) }),
 
   updatePlan: (
@@ -418,11 +420,13 @@ export const api = {
     body: Partial<{
       name: string; price_text: string; tagline: string; features: string[]; is_active: boolean;
       sort_order: number; amount: number | null; clear_amount: boolean; currency: string;
+      limits: Record<string, number | null>;
     }>,
   ) =>
     request<{
       plan_id: string; name: string; price_text: string; tagline: string; features: string[];
       is_active: boolean; sort_order: number; amount: number | null; currency: string; purchasable: boolean;
+        limits: Record<string, number | null>;
     }>(`/v1/plans/${planId}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   deletePlan: (planId: string) =>

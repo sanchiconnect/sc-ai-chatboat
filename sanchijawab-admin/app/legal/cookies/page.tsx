@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { LegalTemplate } from "@/components/marketing/legal/legal-template";
+import { CmsLegal } from "@/components/marketing/legal/cms-legal";
 
 export const metadata: Metadata = { title: "Cookie Policy" };
 
 export default function CookiesPage() {
   return (
-    <LegalTemplate
+    <CmsLegal slug="cookies"
       title="Cookie Policy"
       updated="October 1, 2026"
       sections={[

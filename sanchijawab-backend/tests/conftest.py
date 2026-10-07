@@ -35,6 +35,9 @@ def _rate_limit_off(monkeypatch):
     """The suite signs up many users from one fake IP; the rate-limit tests
     turn this back on explicitly."""
     monkeypatch.setattr(settings, "rate_limit_enabled", False)
+    # A developer's .env may set ALLOW_PRIVATE_URLS=true to crawl local sites;
+    # tests must not depend on that.
+    monkeypatch.setattr(settings, "allow_private_urls", False)
     ratelimit.reset()
 
 

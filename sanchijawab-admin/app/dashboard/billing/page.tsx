@@ -6,10 +6,20 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { resolveWorkspace } from "@/lib/workspace-store";
 import { ProfileMenu } from "@/components/ProfileMenu";
 
+const LIMIT_FIELDS = [
+  { key: "max_messages_per_month", label: "Messages / month" },
+  { key: "max_pages", label: "Indexed pages" },
+  { key: "max_files", label: "Uploaded files" },
+  { key: "max_seats", label: "Team seats" },
+] as const;
+
+type LimitKey = (typeof LIMIT_FIELDS)[number]["key"];
+
 type Plan = {
   plan_id: string; name: string; price_text: string; tagline: string;
   features: string[]; is_active: boolean; sort_order: number;
   amount: number | null; currency: string; purchasable: boolean;
+  limits: Record<LimitKey, number | null>;
 };
 
 type Gateway = {
@@ -62,6 +72,7 @@ function loadRazorpayScript(): Promise<void> {
 const EMPTY_FORM = {
   name: "", price_text: "", tagline: "", featuresText: "", is_active: true, sort_order: 0,
   amountText: "", currency: "INR",
+  limitsText: { max_messages_per_month: "", max_pages: "", max_files: "", max_seats: "" } as Record<LimitKey, string>,
 };
 
 const EMPTY_PROFILE: BillingProfile = {
@@ -74,6 +85,7 @@ function formFromPlan(p: Plan) {
     name: p.name, price_text: p.price_text, tagline: p.tagline,
     featuresText: p.features.join("\n"), is_active: p.is_active, sort_order: p.sort_order,
     amountText: p.amount === null ? "" : String(p.amount), currency: p.currency,
+    limitsText: Object.fromEntries(LIMIT_FIELDS.map((l) => [l.key, p.limits?.[l.key] == null ? "" : String(p.limits[l.key])])) as Record<LimitKey, string>,
   };
 }
 
@@ -205,6 +217,7 @@ export default function BillingPage() {
       is_active: form.is_active,
       sort_order: Number(form.sort_order) || 0,
       currency: form.currency,
+      limits: Object.fromEntries(LIMIT_FIELDS.map((l) => [l.key, form.limitsText[l.key].trim() === "" ? null : Number(form.limitsText[l.key])])),
       ...(amountTrimmed ? { amount: Number(amountTrimmed) } : { amount: null, clear_amount: true }),
     };
     try {
@@ -662,6 +675,13 @@ export default function BillingPage() {
                   onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
                   maxLength={8}
                 />
+              </div>
+            </div>
+            <div>
+              <label className="text-[12.5px] font-medium">Usage limits</label>
+              <p className="text-[11px] text-fg-faint mb-1">Leave a box empty for unlimited. Enforced for workspaces on this plan.</p>
+              <div className="grid grid-cols-2 gap-2">
+                {LIMIT_FIELDS.map((l) => (<label key={l.key} className="text-[12px] text-fg-muted">{l.label}<input type="number" min={0} className="mt-1 w-full border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px] text-fg" placeholder="Unlimited" value={form.limitsText[l.key]} onChange={(e) => setForm({ ...form, limitsText: { ...form.limitsText, [l.key]: e.target.value } })} /></label>))}
               </div>
             </div>
             <div>
