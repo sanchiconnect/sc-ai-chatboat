@@ -8,7 +8,7 @@ Living status doc for the project. Source of truth for planning is the [SanchiJa
 - Package manifests for the three components — installed: `uv sync` in `sanchijawab-backend` (Python 3.12, pinned via `.python-version`), `npm install` in `sanchijawab-admin` and `sanchijawab-widget`
 - `docker-compose.yml` and `.env.example` / `.env` — `db`/`redis` containers running locally. **Note:** the db container's host port is remapped to **55432** (not 5432) because this machine already runs a native Postgres service on 5432 — containers still talk to each other at `db:5432` internally
 - 14 top-level Linear issues + 68 sub-tasks across 5 milestones (Phase 0 Discovery/PoC → Phase 3 Scale), all assigned to Aman
-- **Phase 0 PoC validated end-to-end, including a live LLM call** ([SAN-1055](https://linear.app/sanchiconnect/issue/SAN-1055)): `sanchijawab-backend/app/poc/` — crawled a real page with Crawl4AI, chunked it, embedded locally with fastembed, stored in pgvector, hybrid search, then a real Gemini call (`DEFAULT_PROVIDER=google` / `CLOUD_API_KEY`, same single-key-slot convention as the SanchiConnect project). Answer script supports google/openai/anthropic behind one `CLOUD_API_KEY` — swap `DEFAULT_PROVIDER` to change providers. First real test correctly answered "I don't know" for a question the crawled page didn't cover (FR-C2 strict grounding working as intended, not guessing).
+- **Phase 0 PoC validated end-to-end, including a live LLM call** ([SAN-1055](https://linear.app/sanchiconnect/issue/SAN-1055)): `sanchijawab-backend/app/poc/` — crawled a real page with Crawl4AI, chunked it, embedded locally with fastembed, stored in pgvector, hybrid search, then a real Gemini call (`DEFAULT_PROVIDER=google` / `CLOUD_API_KEY`, same single-key-slot convention as the SanchiConnect project). Answer script supports google/openai behind one `CLOUD_API_KEY` — swap `DEFAULT_PROVIDER` to change providers. First real test correctly answered "I don't know" for a question the crawled page didn't cover (FR-C2 strict grounding working as intended, not guessing).
 
 ## Phase 0 evaluation sites (confirmed working, 2026-09-29)
 
@@ -176,7 +176,7 @@ Superseding the BRD's Postgres+pgvector+Claude recommendation below, for Phase 1
 
 ## Key decisions locked in (original BRD defaults, Phase 0 PoC)
 
-- Answer model: Claude Sonnet 5; fast tasks: Claude Haiku 4.5
+- Answer model: Gemini 2.5 Flash (per-bot tier via FR-C9); fast tasks: Gemini 2.5 Flash
 - Embeddings: fastembed (local, default) with Voyage/OpenAI as upgrade path
 - Database: PostgreSQL 16 + pgvector for both app data and vectors at MVP scale
 - Widget: Preact + Shadow DOM, <60KB gzipped

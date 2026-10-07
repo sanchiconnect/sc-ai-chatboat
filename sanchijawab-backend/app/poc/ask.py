@@ -1,7 +1,7 @@
 """Phase 0 PoC, script 2 (SAN-1073): question -> hybrid search -> [rerank] -> grounded answer.
 
-Answer provider is a single key slot: DEFAULT_PROVIDER picks google/openai/
-anthropic, CLOUD_API_KEY is the one key used for whichever is active (same
+Answer provider is a single key slot: DEFAULT_PROVIDER picks google/openai,
+CLOUD_API_KEY is the one key used for whichever is active (same
 convention as the CLOUD_API_KEY / DEFAULT_PROVIDER pattern in the sibling
 SanchiConnect project). Falls back to printing retrieved passages if
 CLOUD_API_KEY is unset, so the retrieval half can be validated without a key.
@@ -87,23 +87,9 @@ def _answer_via_openai(api_key: str, question: str, knowledge: str) -> str:
     return completion.choices[0].message.content
 
 
-def _answer_via_anthropic(api_key: str, question: str, knowledge: str) -> str:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=os.environ.get("ANSWER_MODEL", "claude-sonnet-5"),
-        max_tokens=800,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": _user_content(question, knowledge)}],
-    )
-    return msg.content[0].text
-
-
 _PROVIDERS = {
     "google": _answer_via_google,
     "openai": _answer_via_openai,
-    "anthropic": _answer_via_anthropic,
 }
 
 

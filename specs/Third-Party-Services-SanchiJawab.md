@@ -6,14 +6,14 @@ Source: BRD v1.1 §9 (LLMs, models, tools & MCP). This is the decided stack — 
 
 | Job | Chosen | Why |
 |---|---|---|
-| Main answer generation | Claude Sonnet 5 (`claude-sonnet-5`) via Anthropic API | Strong instruction-following, stays grounded, cites sources, reliable tool use |
-| Fast tasks (query rewrite, language/intent detection, handoff classifier) | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | Low latency and cost for high-volume steps |
+| Main answer generation | Gemini 2.5 Flash (`gemini-2.5-flash`) via Google API; per-bot tier: Flash-Lite (economy) / Pro (quality) | Low cost, grounded answers, per-bot quality/cost choice (FR-C9) |
+| Fast tasks (query rewrite, language/intent detection, handoff classifier, follow-ups) | Gemini 2.5 Flash | Low latency and cost for high-volume steps |
 | Embeddings | fastembed (local, default) | Free, self-hosted, no API key needed for MVP/dev; Voyage AI or OpenAI as a paid upgrade path for higher multilingual quality |
 | Reranking | Cohere Rerank (optional) | Retrieve 30, rerank to top 6 — meaningful accuracy jump for small cost |
 | OCR (scanned PDFs) | Docling built-in OCR | Catalogues/brochures are often scanned |
 | Moderation | Haiku-based classifier | Blocks abuse before it reaches the main model |
 
-Model names change often — the model ID lives in `.env` (`ANSWER_MODEL`, `FAST_MODEL`), never hardcoded.
+Model names change often — the model IDs live in `.env` (`GEMINI_MODEL`, `GEMINI_MODEL_ECONOMY`, `GEMINI_MODEL_QUALITY`), never hardcoded.
 
 ## Scraping & file processing
 
