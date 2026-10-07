@@ -36,6 +36,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return resp.json();
 }
 
+export interface WidgetTrigger {
+  id: string; type: "time" | "scroll" | "exit"; value: number; message: string; page_pattern: string;
+}
+
 export interface BusinessHours {
   timezone?: string;
   hours?: Record<string, [string, string][]>;
@@ -312,7 +316,7 @@ export const api = {
       texts: { welcome?: string; header?: string };
       consent_text: string; require_consent: boolean;
       offsets: { x: number; y: number }; devices: { desktop: boolean; mobile: boolean };
-      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean;
+      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean; triggers: WidgetTrigger[];
     }>(`/v1/bots/${botId}/widget-config`),
 
   updateWidgetConfig: (
@@ -321,14 +325,14 @@ export const api = {
       primary_color: string; theme: string; position: string; welcome: string; header: string;
       consent_text: string; require_consent: boolean;
       offset_x: number; offset_y: number; desktop_enabled: boolean; mobile_enabled: boolean;
-      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean;
+      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean; triggers: WidgetTrigger[];
     }>,
   ) =>
     request<{
       primary_color: string; theme: string; position: string; texts: Record<string, string>;
       consent_text: string; require_consent: boolean;
       offsets: { x: number; y: number }; devices: { desktop: boolean; mobile: boolean };
-      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean;
+      hidden_paths: string[]; starter_questions: string[]; locale: string; show_sources: boolean; triggers: WidgetTrigger[];
     }>(`/v1/bots/${botId}/widget-config`, { method: "PUT", body: JSON.stringify(body) }),
 
   exportVisitorData: (botId: string, visitorId: string) =>

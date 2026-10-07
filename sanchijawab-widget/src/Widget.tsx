@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { watchTriggers, type Trigger } from "./triggers";
 import { streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, type ChatHistoryTurn } from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
@@ -20,6 +21,7 @@ export interface WidgetProps {
   starterQuestions: string[];
   hideBranding: boolean;
   showSources: boolean;
+  triggers: Trigger[];
   locale: string;
   theme: "light" | "dark";
   onReady?: (controller: WidgetController) => void;
@@ -203,6 +205,7 @@ export function Widget(props: WidgetProps) {
   const [showCsat, setShowCsat] = useState(false);
   const [csatDone, setCsatDone] = useState(false);
   const [identity, setIdentity] = useState<{ name?: string; email?: string }>({});
+  const [nudge, setNudge] = useState<string | null>(null);
   const visitorIdRef = useRef<string>(getOrCreateVisitorId(props.botId));
   const lastPolledIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -235,6 +238,19 @@ export function Widget(props: WidgetProps) {
   }
 
   useEffect(() => saveHistory(props.botId, messages), [messages, props.botId]);
+
+  // Proactive nudges (Phase 2 triggers) — only while the chat is closed, and
+  // never for a visitor who already has a conversation going.
+  useEffect(() => {
+    if (open || props.triggers.length === 0 || messages.length > 0) return;
+    return watchTriggers(
+      props.botId, props.triggers, window.location.pathname, window.innerWidth <= 480, (t) => setNudge(t.message),
+    );
+  }, [open, props.triggers, props.botId, messages.length]);
+
+  useEffect(() => {
+    if (open) setNudge(null);
+  }, [open]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -586,6 +602,13 @@ export function Widget(props: WidgetProps) {
             </button>
           </form>
           {!props.hideBranding && <div class="sj-powered">{t.poweredBy}</div>}
+        </div>
+      )}
+
+      {nudge && !open && (
+        <div class="sj-nudge" role="status">
+          <button class="sj-nudge-text" onClick={() => setOpen(true)}>{nudge}</button>
+          <button class="sj-nudge-x" aria-label={t.closeChat} onClick={() => setNudge(null)}>{"✕"}</button>
         </div>
       )}
 

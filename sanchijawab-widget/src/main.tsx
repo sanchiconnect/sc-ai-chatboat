@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { Widget, type WidgetController } from "./Widget";
 import cssText from "./styles.css?inline";
+import type { Trigger } from "./triggers";
 
 // document.currentScript is only valid during this script's own synchronous
 // execution — captured here, at module top level, since boot() may run
@@ -67,6 +68,7 @@ interface RemoteConfig {
   locale?: string;
   theme?: string;
   show_sources?: boolean;
+  triggers?: Trigger[];
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -175,6 +177,7 @@ async function boot() {
       starterQuestions={remote?.starter_questions || []}
       hideBranding={remote?.hide_branding ?? false}
       showSources={remote?.show_sources ?? true}
+      triggers={remote?.triggers ?? []}
       locale={remote?.locale || ds.locale || "en"}
       theme={remote?.theme === "dark" ? "dark" : "light"}
       onReady={installRealController}

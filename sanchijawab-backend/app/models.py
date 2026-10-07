@@ -356,6 +356,8 @@ class WidgetConfig(Base):
     # Source links under answers (FR-C3, toggleable) — the widget hides them
     # when false.
     show_sources: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Proactive nudges (Phase 2): [{id, type: time|scroll|exit, value, message, page_pattern}]
+    triggers_json: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
 
 
 class ToolConnection(Base):

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, type WidgetTrigger } from "@/lib/api";
 
 const PRESET_COLORS = ["#3D46C9", "#059669", "#DC2626", "#111827"];
 
@@ -23,6 +23,7 @@ export default function WidgetSettingsPage() {
   const [starterQuestions, setStarterQuestions] = useState("");
   const [locale, setLocale] = useState("en");
   const [showSources, setShowSources] = useState(true);
+  const [triggers, setTriggers] = useState<WidgetTrigger[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -47,6 +48,7 @@ export default function WidgetSettingsPage() {
         setStarterQuestions((cfg.starter_questions || []).join("\n"));
         setLocale(cfg.locale || "en");
         setShowSources(cfg.show_sources ?? true);
+        setTriggers(cfg.triggers || []);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load widget config"))
       .finally(() => setLoading(false));
@@ -65,7 +67,7 @@ export default function WidgetSettingsPage() {
         desktop_enabled: desktopEnabled, mobile_enabled: mobileEnabled,
         hidden_paths: hiddenPaths.split(/[\n,]+/).map((p) => p.trim()).filter(Boolean),
         starter_questions: starterQuestions.split("\n").map((q) => q.trim()).filter(Boolean),
-        locale, show_sources: showSources,
+        locale, show_sources: showSources, triggers,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -255,6 +257,73 @@ export default function WidgetSettingsPage() {
             value={hiddenPaths}
             onChange={(e) => setHiddenPaths(e.target.value)}
           />
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <h3 className="text-sm font-medium">Proactive messages</h3>
+          <p className="text-xs text-fg-muted mb-2">
+            A small bubble above the chat button that invites the visitor to chat. Each one shows at most once per
+            visitor, only while the chat is closed and no conversation has started. Up to 5.
+          </p>
+          {triggers.map((t, i) => (
+            <div key={t.id || i} className="mb-3 rounded-lg border border-border p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <select
+                  aria-label="When to show"
+                  className="border border-border rounded-lg px-2 py-1"
+                  value={t.type}
+                  onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, type: e.target.value as WidgetTrigger["type"], value: e.target.value === "scroll" ? 50 : e.target.value === "time" ? 15 : 0 } : x)))}
+                >
+                  <option value="time">After time on page</option>
+                  <option value="scroll">After scrolling</option>
+                  <option value="exit">When about to leave (desktop)</option>
+                </select>
+                {t.type !== "exit" && (
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="number" min={1} max={t.type === "time" ? 600 : 100}
+                      aria-label={t.type === "time" ? "Seconds" : "Percent"}
+                      className="w-20 border border-border rounded-lg px-2 py-1"
+                      value={t.value}
+                      onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, value: Number(e.target.value) } : x)))}
+                    />
+                    {t.type === "time" ? "seconds" : "% of the page"}
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="ml-auto text-danger text-xs font-semibold"
+                  onClick={() => setTriggers(triggers.filter((_, j) => j !== i))}
+                >
+                  Remove
+                </button>
+              </div>
+              <input
+                aria-label="Message"
+                maxLength={140}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Need help choosing a plan? Ask me anything."
+                value={t.message}
+                onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, message: e.target.value } : x)))}
+              />
+              <input
+                aria-label="Only on pages matching"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="Only on pages matching (optional), e.g. /pricing or /blog*"
+                value={t.page_pattern}
+                onChange={(e) => setTriggers(triggers.map((x, j) => (j === i ? { ...x, page_pattern: e.target.value } : x)))}
+              />
+            </div>
+          ))}
+          {triggers.length < 5 && (
+            <button
+              type="button"
+              className="text-sm font-semibold text-accent"
+              onClick={() => setTriggers([...triggers, { id: "", type: "time", value: 15, message: "", page_pattern: "" }])}
+            >
+              + Add a proactive message
+            </button>
+          )}
         </div>
 
         <div className="border-t border-border pt-5">

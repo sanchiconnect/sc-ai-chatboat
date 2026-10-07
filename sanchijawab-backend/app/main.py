@@ -884,7 +884,41 @@ async def get_widget_config(bot_id: str, user: CurrentUser = Depends(get_current
             "starter_questions": config.starter_questions_json or [],
             "locale": config.locale or "en",
             "show_sources": config.show_sources,
+            "triggers": config.triggers_json or [],
         }
+
+
+TRIGGER_TYPES = {"time", "scroll", "exit"}
+MAX_TRIGGERS = 5
+
+
+class TriggerIn(BaseModel):
+    id: str = ""
+    type: str
+    value: int = 0
+    message: str
+    page_pattern: str = ""
+
+
+def _clean_triggers(items: list[TriggerIn]) -> list[dict]:
+    if len(items) > MAX_TRIGGERS:
+        raise HTTPException(422, f"At most {MAX_TRIGGERS} triggers per bot")
+    out = []
+    for t in items:
+        if t.type not in TRIGGER_TYPES:
+            raise HTTPException(422, f"trigger type must be one of {sorted(TRIGGER_TYPES)}")
+        message = t.message.strip()
+        if not message or len(message) > 140:
+            raise HTTPException(422, "trigger message must be 1-140 characters")
+        if t.type == "time" and not 1 <= t.value <= 600:
+            raise HTTPException(422, "time triggers need 1-600 seconds")
+        if t.type == "scroll" and not 5 <= t.value <= 100:
+            raise HTTPException(422, "scroll triggers need 5-100 percent")
+        out.append({
+            "id": t.id.strip()[:32] or uuid.uuid4().hex[:8], "type": t.type, "value": t.value if t.type != "exit" else 0,
+            "message": message, "page_pattern": t.page_pattern.strip()[:200],
+        })
+    return out
 
 
 class UpdateWidgetConfigRequest(BaseModel):
@@ -903,6 +937,7 @@ class UpdateWidgetConfigRequest(BaseModel):
     starter_questions: list[str] | None = None
     locale: str | None = None
     show_sources: bool | None = None
+    triggers: list[TriggerIn] | None = None
 
 
 @app.put("/v1/bots/{bot_id}/widget-config")
@@ -958,6 +993,8 @@ async def update_widget_config(
             config.locale = body.locale
         if body.show_sources is not None:
             config.show_sources = body.show_sources
+        if body.triggers is not None:
+            config.triggers_json = _clean_triggers(body.triggers)
 
         await session.commit()
         return {
@@ -971,6 +1008,7 @@ async def update_widget_config(
             "starter_questions": config.starter_questions_json or [],
             "locale": config.locale or "en",
             "show_sources": config.show_sources,
+            "triggers": config.triggers_json or [],
         }
 
 
@@ -1490,6 +1528,7 @@ async def public_widget_config(bot_id: str, request: Request):
             "locale": (config.locale if config else None) or "en",
             "theme": (config.theme if config else None) or "light",
             "show_sources": config.show_sources if config else True,
+            "triggers": (config.triggers_json if config else None) or [],
         }
 
 
