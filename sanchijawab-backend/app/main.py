@@ -45,7 +45,7 @@ from .models import (
     AuditLog, BillingProfile, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
-from .services import crm, privacy, storage
+from .services import crm, llm, privacy, retrieval, storage
 from .services.auth import (
     create_access_token,
     create_email_verify_token,
@@ -1918,6 +1918,37 @@ async def reply_conversation(conversation_id: str, body: ReplyRequest, user: Cur
         )
         await session.commit()
         return {"id": msg.id, "role": "agent", "content": msg.content, "created_at": msg.created_at.isoformat()}
+
+
+@app.post(
+    "/v1/conversations/{conversation_id}/suggest-reply",
+    dependencies=[Depends(rate_limit("suggest-reply", limit=20, window_seconds=60))],
+)
+async def suggest_reply(conversation_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Agent copilot: a draft reply grounded in the bot's knowledge for the
+    agent to edit and send. Never sends anything itself."""
+    async with SessionLocal() as session:
+        conv = await session.get(Conversation, conversation_id)
+        if conv is None:
+            raise HTTPException(404, "Conversation not found")
+        bot = await session.get(Bot, conv.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
+
+        recent = (await list_messages(session, conversation_id=conversation_id))[-10:]
+        transcript = [{"role": m.role, "content": m.content} for m in recent]
+        last_visitor = next((m.content for m in reversed(recent) if m.role == "visitor"), None)
+        if last_visitor is None:
+            raise HTTPException(422, "No visitor message to reply to yet")
+
+        chunks = await retrieval.hybrid_search(session, tenant_id=bot.tenant_id, bot_id=bot.id, query=last_visitor)
+        knowledge = "\n".join(f"[{i}] {c['text']}" for i, c in enumerate(chunks, 1))
+        try:
+            draft = await llm.draft_agent_reply(bot.name, transcript, knowledge)
+        except Exception:
+            logging.getLogger("sanchijawab.copilot").warning("copilot draft failed", exc_info=True)
+            raise HTTPException(503, "The assistant couldn't draft a reply just now — try again in a moment")
+        sources = list(dict.fromkeys(c["url"] for c in chunks if c.get("url")))[:3]
+        return {"suggestion": draft, "sources": sources}
 
 
 @app.post("/v1/conversations/{conversation_id}/close")

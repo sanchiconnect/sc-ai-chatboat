@@ -389,6 +389,11 @@ export const api = {
       body: JSON.stringify({ question, answer }),
     }),
 
+  suggestReply: (conversationId: string) =>
+    request<{ suggestion: string; sources: string[] }>(`/v1/conversations/${conversationId}/suggest-reply`, {
+      method: "POST",
+    }),
+
   listLeads: (botId: string) =>
     request<
       { lead_id: string; conversation_id: string; name: string; email: string; phone: string; created_at: string; pushed_to_crm: boolean }[]

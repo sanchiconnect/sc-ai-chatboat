@@ -54,6 +54,7 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [reply, setReply] = useState("");
+  const [suggesting, setSuggesting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +76,20 @@ export default function InboxPage() {
       .getConversation(id)
       .then(setDetail)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load conversation"));
+  }
+
+  async function suggest() {
+    if (!selectedId) return;
+    setSuggesting(true);
+    setError(null);
+    try {
+      const res = await api.suggestReply(selectedId);
+      setReply(res.suggestion);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't draft a reply");
+    } finally {
+      setSuggesting(false);
+    }
   }
 
   async function sendReply(e: React.FormEvent) {
@@ -212,7 +227,17 @@ export default function InboxPage() {
 
               {detail.status !== "closed" && (
                 <form onSubmit={sendReply} className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={suggest}
+                    disabled={suggesting}
+                    title="Draft a reply from your knowledge base — you can edit it before sending"
+                    className="border border-border rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {suggesting ? "Drafting…" : "✨ Suggest reply"}
+                  </button>
                   <input
+                    aria-label="Reply as agent"
                     className="flex-1 border border-border rounded-lg px-3 py-2 text-sm"
                     placeholder="Reply as agent…"
                     value={reply}
