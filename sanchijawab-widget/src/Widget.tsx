@@ -17,6 +17,7 @@ export interface WidgetProps {
   offsetX: number;
   offsetY: number;
   starterQuestions: string[];
+  hideBranding: boolean;
 }
 
 interface Message {
@@ -445,7 +446,7 @@ export function Widget(props: WidgetProps) {
               {"\u27A4"}
             </button>
           </form>
-          <div class="sj-powered">Powered by SanchiJawab</div>
+          {!props.hideBranding && <div class="sj-powered">Powered by SanchiJawab</div>}
         </div>
       )}
 

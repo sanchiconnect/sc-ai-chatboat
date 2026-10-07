@@ -1346,6 +1346,7 @@ async def public_widget_config(bot_id: str, request: Request):
         bot.widget_last_seen_host = _request_hostname(request)
         await session.commit()
         config = await session.get(WidgetConfig, bot_id)
+        workspace = await session.get(Workspace, bot.workspace_id)
         texts = (config.texts_json if config else None) or DEFAULT_WIDGET_TEXTS
         return {
             "business_name": texts.get("header") or bot.name,
@@ -1356,6 +1357,11 @@ async def public_widget_config(bot_id: str, request: Request):
             "consent_text": (config.consent_text if config else "") or DEFAULT_CONSENT_TEXT,
             "avatar_id": bot.avatar_id,
             "avatar_name": bot.avatar_name,
+            # FR-W9 (Should) — "Powered by SanchiJawab" branding stays on
+            # trial/unpaid workspaces, drops once a real paid order has set
+            # plan_id (same "on a paid plan" signal plan_limits.py already
+            # uses elsewhere — trial_ends_at is irrelevant once plan_id is set).
+            "hide_branding": bool(workspace and workspace.plan_id),
             # Device/URL visibility (SAN-1101, FR-W6) can only be decided
             # client-side — the script doesn't know the visitor's viewport,
             # and SPA navigation changes window.location without a new

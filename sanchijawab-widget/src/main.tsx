@@ -20,6 +20,7 @@ interface RemoteConfig {
   devices?: { desktop: boolean; mobile: boolean };
   hidden_paths?: string[];
   starter_questions?: string[];
+  hide_branding?: boolean;
 }
 
 async function fetchConfig(apiBase: string, botId: string): Promise<RemoteConfig | null> {
@@ -114,6 +115,7 @@ async function boot() {
       offsetX={remote?.offsets?.x ?? 20}
       offsetY={remote?.offsets?.y ?? 20}
       starterQuestions={remote?.starter_questions || []}
+      hideBranding={remote?.hide_branding ?? false}
     />,
     mount,
   );
