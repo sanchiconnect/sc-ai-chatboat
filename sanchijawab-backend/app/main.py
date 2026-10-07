@@ -43,7 +43,7 @@ from .models import (
     BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
-from .services import crm, storage
+from .services import crm, privacy, storage
 from .services.auth import (
     create_access_token,
     create_email_verify_token,
@@ -558,6 +558,44 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         await session.delete(bot)
         await session.commit()
         return {"deleted": True}
+
+
+# ─── Privacy: export / erase / retention (SAN-1127) ──────────────────────
+
+
+async def _admin_bot(session, bot_id: str, user: CurrentUser) -> Bot:
+    bot = await session.get(Bot, bot_id)
+    if bot is None:
+        raise HTTPException(404, "Bot not found")
+    await require_workspace_role(bot.workspace_id, user, min_role="admin")
+    return bot
+
+
+@app.get("/v1/bots/{bot_id}/visitors/{visitor_id}/export")
+async def export_visitor_data(bot_id: str, visitor_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        await _admin_bot(session, bot_id, user)
+        return await privacy.export_visitor(session, bot_id=bot_id, visitor_id=visitor_id)
+
+
+@app.delete("/v1/bots/{bot_id}/visitors/{visitor_id}")
+async def erase_visitor_data(bot_id: str, visitor_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        await _admin_bot(session, bot_id, user)
+        count = await privacy.erase_visitor(session, bot_id=bot_id, visitor_id=visitor_id)
+        await session.commit()
+        return {"deleted_conversations": count}
+
+
+@app.delete("/v1/bots/{bot_id}/conversations")
+async def purge_old_conversations(bot_id: str, older_than_days: int, user: CurrentUser = Depends(get_current_user)):
+    if older_than_days < 1:
+        raise HTTPException(400, "older_than_days must be at least 1")
+    async with SessionLocal() as session:
+        await _admin_bot(session, bot_id, user)
+        count = await privacy.purge_older_than(session, bot_id=bot_id, days=older_than_days)
+        await session.commit()
+        return {"deleted_conversations": count}
 
 
 class CreateTeamRequest(BaseModel):
