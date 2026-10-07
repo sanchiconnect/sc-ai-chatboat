@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getStaffToken, clearStaffToken, staffApi, StaffApiError } from "@/lib/staff-api";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
+const NAV = [
+  { href: "/staff", label: "Workspaces" },
+  { href: "/staff/content", label: "Website content" },
+  { href: "/staff/settings", label: "Settings & activity" },
+];
+
 export default function StaffConsoleLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,9 +53,21 @@ export default function StaffConsoleLayout({ children }: { children: React.React
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/staff" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Workspaces</Link>
-            <Link href="/staff/content" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Website content</Link>
-            <Link href="/staff/settings" className="text-[12.5px] font-semibold text-fg-muted hover:text-fg">Settings &amp; activity</Link>
+            {NAV.map((item) => {
+              const active = item.href === "/staff" ? pathname === "/staff" || pathname.startsWith("/staff/workspaces") : pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`text-[12.5px] font-semibold rounded-lg px-3 py-1.5 transition-colors ${
+                    active ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg hover:bg-surface-2"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             <span className="text-[12px] text-fg-faint hidden sm:inline">{email}</span>
             <ThemeToggle />
             <button

@@ -19,7 +19,29 @@ export default function InstallPage() {
   const [result, setResult] = useState<CheckResult | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  const snippet = `<script src="${WIDGET_SRC}" data-bot="${botId}" data-api="${API_URL}" async></script>`;
+  // Self-contained loader in the style of other chat products' snippets: it
+  // sets the bot id, queues SanchiJawab.open()/close()/identify() calls made
+  // before the widget has loaded, then injects widget.js asynchronously.
+  const snippet = `<!-- Start of SanchiJawab code -->
+<script>
+  window.__sj = window.__sj || {};
+  window.__sj.botId = "${botId}";
+  window.__sj.api = "${API_URL}";
+  (function (w, d) {
+    var q = [];
+    function stub(m) { return function () { q.push([m, [].slice.call(arguments)]); }; }
+    w.SanchiJawab = w.SanchiJawab || { _q: q, open: stub("open"), close: stub("close"), identify: stub("identify") };
+    var s = d.createElement("script");
+    s.async = true;
+    s.src = "${WIDGET_SRC}";
+    s.setAttribute("data-bot", w.__sj.botId);
+    s.setAttribute("data-api", w.__sj.api);
+    d.head.appendChild(s);
+  })(window, document);
+</script>
+<noscript>Chat with us, powered by SanchiJawab</noscript>
+<!-- End of SanchiJawab code -->`;
+  const simpleSnippet = `<script src="${WIDGET_SRC}" data-bot="${botId}" data-api="${API_URL}" async></script>`;
 
   async function checkInstall() {
     setChecking(true);
@@ -59,6 +81,19 @@ export default function InstallPage() {
       >
         {copied ? "Copied!" : "Copy code"}
       </button>
+
+      <details className="mt-4 text-sm text-fg-muted">
+        <summary className="cursor-pointer font-medium">Prefer a one-line tag?</summary>
+        <p className="mt-2">Does the same job; paste it just before <code>&lt;/body&gt;</code>.</p>
+        <pre
+          tabIndex={0}
+          role="region"
+          aria-label="One-line install snippet"
+          className="mt-2 bg-gray-900 text-gray-100 text-sm rounded-lg p-4 overflow-x-auto"
+        >
+          {simpleSnippet}
+        </pre>
+      </details>
 
       <div className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5">
         <h3 className="text-[15px] font-semibold text-fg mb-1">Is it actually live?</h3>

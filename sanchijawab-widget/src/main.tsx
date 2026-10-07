@@ -19,6 +19,14 @@ const callQueue: QueuedCall[] = [];
 function installQueueShim() {
   const w = window as unknown as { SanchiJawab?: Record<string, (...a: unknown[]) => void> };
   if (w.SanchiJawab && (w.SanchiJawab as { _sjReal?: boolean })._sjReal) return;
+  // The copy-paste loader snippet (Install page) defines its own tiny
+  // SanchiJawab stub with a `_q` of [method, args] pairs recorded before this
+  // file finished loading — fold those into the real queue instead of
+  // overwriting the stub and losing them.
+  const early = (w.SanchiJawab as unknown as { _q?: [keyof WidgetController, unknown[]][] } | undefined)?._q;
+  if (Array.isArray(early)) {
+    for (const [method, args] of early) callQueue.push({ method, arg: args?.[0] });
+  }
   w.SanchiJawab = {
     open: () => callQueue.push({ method: "open" }),
     close: () => callQueue.push({ method: "close" }),
@@ -97,9 +105,21 @@ function isPathHidden(patterns: string[] | undefined, pathname: string): boolean
 }
 
 async function boot() {
-  const ds = scriptEl?.dataset ?? {};
+  // Pasting the snippet twice (or a CMS rendering it in two places) must not
+  // mount two chat bubbles.
+  // The flag is set synchronously: boot() awaits a network call before it
+  // mounts, so two copies would otherwise both pass a DOM-only check.
+  const flagged = window as unknown as { __sjBooted?: boolean };
+  if (flagged.__sjBooted || document.getElementById("sanchijawab-widget-host")) return;
+  flagged.__sjBooted = true;
 
-  const botId = ds.bot;
+  // Two ways to configure: data-* attributes on the script tag, or the
+  // `window.__sj = { botId, api }` object the copy-paste loader sets (the
+  // loader injects this file as a script tag with the same data-* anyway).
+  const ds = scriptEl?.dataset ?? {};
+  const cfg = (window as unknown as { __sj?: { botId?: string; api?: string } }).__sj ?? {};
+
+  const botId = ds.bot || cfg.botId;
   if (!botId) {
     console.error("SanchiJawab widget: missing data-bot attribute on the script tag.");
     return;
@@ -107,7 +127,7 @@ async function boot() {
 
   // data-api lets local/staging embeds point at a different backend; falls
   // back to the origin the script itself was served from.
-  const apiBase = ds.api || new URL(scriptEl!.src).origin;
+  const apiBase = ds.api || cfg.api || new URL(scriptEl!.src).origin;
 
   // Remote config (set from the dashboard's Widget settings page) is the
   // source of truth; data-* attributes are only a fallback if the fetch
