@@ -36,6 +36,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return resp.json();
 }
 
+export interface BusinessHours {
+  timezone?: string;
+  hours?: Record<string, [string, string][]>;
+}
+
 export interface SignupResponse {
   access_token: string;
   workspace_id: string;
@@ -230,7 +235,7 @@ export const api = {
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
-      crm_webhook_url: string; handoff_keywords: string;
+      crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
     }>(`/v1/bots/${botId}`),
 
   installCheck: (botId: string) =>
@@ -243,13 +248,41 @@ export const api = {
     body: Partial<{
       name: string; persona: string; instructions: string; model_tier: string; allowed_domains: string[];
       avatar_id: string; avatar_name: string; crm_webhook_url: string; handoff_keywords: string;
+      business_hours: BusinessHours;
     }>,
   ) =>
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
-      crm_webhook_url: string; handoff_keywords: string;
+      crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
     }>(`/v1/bots/${botId}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  listTeams: (botId: string) =>
+    request<{ team_id: string; name: string }[]>(`/v1/bots/${botId}/teams`),
+
+  createTeam: (botId: string, name: string) =>
+    request<{ team_id: string; name: string }>(`/v1/bots/${botId}/teams`, {
+      method: "POST", body: JSON.stringify({ name }),
+    }),
+
+  deleteTeam: (teamId: string) =>
+    request<{ deleted: boolean }>(`/v1/teams/${teamId}`, { method: "DELETE" }),
+
+  listRoutingRules: (botId: string) =>
+    request<{ rule_id: string; team_id: string; page_pattern: string; language: string; priority: number }[]>(
+      `/v1/bots/${botId}/routing-rules`,
+    ),
+
+  createRoutingRule: (
+    botId: string,
+    body: { team_id: string; page_pattern?: string; language?: string; priority?: number },
+  ) =>
+    request<{ rule_id: string; team_id: string; page_pattern: string; language: string; priority: number }>(
+      `/v1/bots/${botId}/routing-rules`, { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  deleteRoutingRule: (ruleId: string) =>
+    request<{ deleted: boolean }>(`/v1/routing-rules/${ruleId}`, { method: "DELETE" }),
 
   getWidgetConfig: (botId: string) =>
     request<{
@@ -272,12 +305,13 @@ export const api = {
 
   listConversations: (botId: string, status?: string) =>
     request<
-      { conversation_id: string; status: string; visitor_id: string; page_url: string; started_at: string; last_message: string | null }[]
+      { conversation_id: string; status: string; visitor_id: string; page_url: string; started_at: string; last_message: string | null; team: string | null }[]
     >(`/v1/bots/${botId}/conversations${status ? `?status=${status}` : ""}`),
 
   getConversation: (conversationId: string) =>
     request<{
       conversation_id: string; status: string; visitor_id: string; page_url: string; started_at: string;
+      team: string | null;
       messages: { id: string; role: string; content: string; created_at: string }[];
       leads: { name: string; email: string; phone: string }[];
     }>(`/v1/conversations/${conversationId}`),

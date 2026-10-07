@@ -48,6 +48,16 @@ const TABS = [
     ),
   },
   {
+    href: "routing",
+    label: "Routing",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 3v12a3 3 0 0 0 3 3h9" />
+        <path d="M15 6l3-3 3 3" />
+      </svg>
+    ),
+  },
+  {
     href: "settings",
     label: "Bot settings",
     icon: (

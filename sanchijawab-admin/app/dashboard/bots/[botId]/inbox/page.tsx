@@ -12,6 +12,7 @@ type ConversationSummary = {
   page_url: string;
   started_at: string;
   last_message: string | null;
+  team: string | null;
 };
 
 type ConversationDetail = {
@@ -20,6 +21,7 @@ type ConversationDetail = {
   visitor_id: string;
   page_url: string;
   started_at: string;
+  team: string | null;
   messages: { id: string; role: string; content: string; created_at: string }[];
   leads: { name: string; email: string; phone: string }[];
 };
@@ -137,6 +139,11 @@ export default function InboxPage() {
                 <span className="text-xs text-fg-faint">{new Date(c.started_at).toLocaleString()}</span>
               </div>
               <p className="text-sm truncate mt-1">{c.last_message || "(no messages)"}</p>
+              {c.team && (
+                <span className="inline-block mt-1 text-[11px] font-medium bg-accent-soft text-accent-ink rounded-full px-2 py-0.5">
+                  {c.team}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -148,6 +155,11 @@ export default function InboxPage() {
               <div className="flex justify-between items-center mb-3">
                 <div>
                   <span className="text-xs font-medium uppercase text-fg-muted">{detail.status}</span>
+                  {detail.team && (
+                    <span className="ml-2 text-[11px] font-medium bg-accent-soft text-accent-ink rounded-full px-2 py-0.5">
+                      {detail.team}
+                    </span>
+                  )}
                   <p className="text-xs text-fg-faint truncate max-w-xs">{detail.page_url}</p>
                 </div>
                 {detail.status !== "closed" && (

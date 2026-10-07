@@ -99,6 +99,16 @@ async def answer_stream(
         query = analysis.get("standalone_query") or message
         language = analysis.get("language") or "en"
 
+        if conversation_id:
+            # Persisted so language-based routing rules (SAN-1112, FR-H3)
+            # have something real to match against — Conversation.language
+            # was otherwise write-once at creation ("en", regardless of what
+            # the visitor actually typed).
+            conv = await session.get(Conversation, conversation_id)
+            if conv is not None and conv.language != language:
+                conv.language = language
+                await session.commit()
+
         if analysis.get("is_conversational"):
             # Pure small talk ("hello", "thanks") has no corresponding
             # <knowledge> passage — retrieval would just attach irrelevant

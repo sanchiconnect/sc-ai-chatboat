@@ -21,7 +21,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -40,7 +40,7 @@ from .deps import (
 )
 from .models import (
     BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Order,
-    PaymentGateway, Plan, QAPair, Source, ToolConnection, User, Workspace, WidgetConfig,
+    PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, storage
 from .services.auth import (
@@ -73,6 +73,7 @@ from .services.plan_limits import (
 )
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
+from .services.routing import is_within_business_hours, route_team
 from .services.tracing import get_langfuse
 
 
@@ -449,6 +450,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
+            "business_hours": bot.business_hours_json,
         }
 
 
@@ -483,6 +485,7 @@ class UpdateBotRequest(BaseModel):
     avatar_name: str | None = None
     crm_webhook_url: str | None = None
     handoff_keywords: str | None = None
+    business_hours: dict | None = None
 
 
 @app.patch("/v1/bots/{bot_id}")
@@ -502,6 +505,8 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
                 setattr(bot, field, value)
         if body.allowed_domains is not None:
             bot.allowed_domains = [d.strip().lower() for d in body.allowed_domains if d.strip()]
+        if body.business_hours is not None:
+            bot.business_hours_json = body.business_hours
         await session.commit()
         return {
             "bot_id": bot.id, "name": bot.name, "persona": bot.persona,
@@ -509,6 +514,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
+            "business_hours": bot.business_hours_json,
         }
 
 
@@ -540,7 +546,125 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         await session.execute(delete(QAPair).where(QAPair.bot_id == bot_id))
         await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id == bot_id))
         await session.execute(delete(ToolConnection).where(ToolConnection.bot_id == bot_id))
+        # routing_rules has a FK to teams, so it goes first.
+        await session.execute(delete(RoutingRule).where(RoutingRule.bot_id == bot_id))
+        await session.execute(delete(Team).where(Team.bot_id == bot_id))
         await session.delete(bot)
+        await session.commit()
+        return {"deleted": True}
+
+
+class CreateTeamRequest(BaseModel):
+    name: str
+
+
+@app.get("/v1/bots/{bot_id}/teams")
+async def list_teams(bot_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+
+        teams = (await session.execute(select(Team).where(Team.bot_id == bot_id))).scalars().all()
+        return [{"team_id": t.id, "name": t.name} for t in teams]
+
+
+@app.post("/v1/bots/{bot_id}/teams")
+async def create_team(bot_id: str, body: CreateTeamRequest, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        team = Team(tenant_id=bot.tenant_id, bot_id=bot_id, name=body.name)
+        session.add(team)
+        await session.commit()
+        return {"team_id": team.id, "name": team.name}
+
+
+@app.delete("/v1/teams/{team_id}")
+async def delete_team(team_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        team = await session.get(Team, team_id)
+        if team is None:
+            raise HTTPException(404, "Team not found")
+        bot = await session.get(Bot, team.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        await session.execute(delete(RoutingRule).where(RoutingRule.team_id == team_id))
+        await session.execute(
+            update(Conversation).where(Conversation.routed_team_id == team_id).values(routed_team_id=None)
+        )
+        await session.delete(team)
+        await session.commit()
+        return {"deleted": True}
+
+
+class RoutingRuleRequest(BaseModel):
+    team_id: str
+    page_pattern: str = ""
+    language: str = ""
+    priority: int = 0
+
+
+@app.get("/v1/bots/{bot_id}/routing-rules")
+async def list_routing_rules(bot_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="viewer")
+
+        rules = (
+            await session.execute(
+                select(RoutingRule).where(RoutingRule.bot_id == bot_id).order_by(RoutingRule.priority.asc())
+            )
+        ).scalars().all()
+        return [
+            {
+                "rule_id": r.id, "team_id": r.team_id, "page_pattern": r.page_pattern,
+                "language": r.language, "priority": r.priority,
+            }
+            for r in rules
+        ]
+
+
+@app.post("/v1/bots/{bot_id}/routing-rules")
+async def create_routing_rule(bot_id: str, body: RoutingRuleRequest, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        bot = await session.get(Bot, bot_id)
+        if bot is None:
+            raise HTTPException(404, "Bot not found")
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        team = await session.get(Team, body.team_id)
+        if team is None or team.bot_id != bot_id:
+            raise HTTPException(404, "Team not found")
+
+        rule = RoutingRule(
+            tenant_id=bot.tenant_id, bot_id=bot_id, team_id=body.team_id,
+            page_pattern=body.page_pattern.strip(), language=body.language.strip(), priority=body.priority,
+        )
+        session.add(rule)
+        await session.commit()
+        return {
+            "rule_id": rule.id, "team_id": rule.team_id, "page_pattern": rule.page_pattern,
+            "language": rule.language, "priority": rule.priority,
+        }
+
+
+@app.delete("/v1/routing-rules/{rule_id}")
+async def delete_routing_rule(rule_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        rule = await session.get(RoutingRule, rule_id)
+        if rule is None:
+            raise HTTPException(404, "Routing rule not found")
+        bot = await session.get(Bot, rule.bot_id)
+        await require_workspace_role(bot.workspace_id, user, min_role="admin")
+
+        await session.delete(rule)
         await session.commit()
         return {"deleted": True}
 
@@ -1168,6 +1292,9 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
         full_text = ""
         sources: list[dict] = []
         handoff = False
+        within_hours = True
+        routed_team_id: str | None = None
+        routed_team_name: str | None = None
         no_answer = False
         async with SessionLocal() as session:
             async for event in answer_stream(
@@ -1179,6 +1306,21 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
                     full_text += event.get("text") or ""
                 elif event["type"] == "handoff":
                     handoff = True
+                    # Business hours + routing (SAN-1112, FR-H3) are decided
+                    # once, right here, from the conversation's state as of
+                    # the handoff — not re-evaluated later if rules/hours
+                    # change, same as any other point-in-time decision in
+                    # this flow (e.g. consecutive_low_confidence resetting).
+                    within_hours = is_within_business_hours(bot.business_hours_json)
+                    conv_now = await session.get(Conversation, conversation_id)
+                    if conv_now is not None:
+                        routed_team_id = await route_team(
+                            session, bot_id=bot_id, page_url=conv_now.page_url, language=conv_now.language,
+                        )
+                        if routed_team_id:
+                            team = await session.get(Team, routed_team_id)
+                            routed_team_name = team.name if team else None
+                    event = {**event, "within_business_hours": within_hours, "team": routed_team_name}
                 elif event["type"] == "done":
                     sources = event.get("sources") or []
                     no_answer = bool(event.get("no_answer"))
@@ -1189,9 +1331,23 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
                 conv2 = await session.get(Conversation, conversation_id)
                 if conv2 is not None:
                     conv2.status = "waiting"
+                    conv2.routed_team_id = routed_team_id
+                if within_hours:
+                    reply = (
+                        f"Connecting you with our {routed_team_name} team — someone will be with you shortly."
+                        if routed_team_name
+                        else "Connecting you with our team — someone will be with you shortly."
+                    )
+                else:
+                    reply = (
+                        "We're currently outside business hours — leave your details and our"
+                        f" {routed_team_name} team will get back to you as soon as we're back."
+                        if routed_team_name
+                        else "We're currently outside business hours — leave your details and we'll get back to you as soon as we're back."
+                    )
                 await add_message(
                     session, conversation_id=conversation_id, tenant_id=bot.tenant_id,
-                    role="bot", content="Connecting you with our team — someone will be with you shortly.",
+                    role="bot", content=reply,
                 )
             elif full_text:
                 # confidence is a crude proxy (0.0/1.0), not a real score — just
@@ -1314,7 +1470,10 @@ async def public_create_lead(bot_id: str, body: LeadRequest, request: Request, b
 
 
 @app.get("/v1/bots/{bot_id}/conversations")
-async def list_conversations(bot_id: str, status: str | None = None, user: CurrentUser = Depends(get_current_user)):
+async def list_conversations(
+    bot_id: str, status: str | None = None, team_id: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
+):
     async with SessionLocal() as session:
         bot = await session.get(Bot, bot_id)
         if bot is None:
@@ -1324,7 +1483,15 @@ async def list_conversations(bot_id: str, status: str | None = None, user: Curre
         stmt = select(Conversation).where(Conversation.bot_id == bot_id).order_by(Conversation.started_at.desc())
         if status:
             stmt = stmt.where(Conversation.status == status)
+        if team_id:
+            stmt = stmt.where(Conversation.routed_team_id == team_id)
         convs = (await session.execute(stmt)).scalars().all()
+
+        team_ids = {c.routed_team_id for c in convs if c.routed_team_id}
+        teams = {}
+        if team_ids:
+            team_rows = (await session.execute(select(Team).where(Team.id.in_(team_ids)))).scalars().all()
+            teams = {t.id: t.name for t in team_rows}
 
         result = []
         for c in convs:
@@ -1337,6 +1504,7 @@ async def list_conversations(bot_id: str, status: str | None = None, user: Curre
                 "conversation_id": c.id, "status": c.status, "visitor_id": c.visitor_id,
                 "page_url": c.page_url, "started_at": c.started_at.isoformat(),
                 "last_message": last.content[:140] if last else None,
+                "team": teams.get(c.routed_team_id),
             })
         return result
 
@@ -1354,9 +1522,11 @@ async def get_conversation(conversation_id: str, user: CurrentUser = Depends(get
         leads = (
             await session.execute(select(Lead).where(Lead.conversation_id == conversation_id))
         ).scalars().all()
+        team = await session.get(Team, conv.routed_team_id) if conv.routed_team_id else None
         return {
             "conversation_id": conv.id, "status": conv.status, "visitor_id": conv.visitor_id,
             "page_url": conv.page_url, "started_at": conv.started_at.isoformat(),
+            "team": team.name if team else None,
             "messages": [
                 {"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat()}
                 for m in rows

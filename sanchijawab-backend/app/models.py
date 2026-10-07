@@ -114,6 +114,12 @@ class Bot(Base):
     # phrasing (SAN-1111, FR-H2). Empty by default — these are business-
     # specific, not something to guess a default list for.
     handoff_keywords: Mapped[str] = mapped_column(Text, default="")
+    # Weekly availability for human handoff (SAN-1112, FR-H3). Empty dict
+    # means "always available" (preserves pre-FR-H3 behavior for bots that
+    # never configure this). Shape when set:
+    # {"timezone": "Asia/Kolkata", "hours": {"mon": [["09:00","18:00"]], ...}}
+    # — a weekday key absent from "hours" is closed all day.
+    business_hours_json: Mapped[dict] = mapped_column(JSON, default=dict)
     # live|pending|draft|suspended — set by the bot's own owner (live/draft
     # via Bot settings) or by a super admin as a moderation action
     # (pending/suspended); staff changes here never touch persona/
@@ -197,6 +203,42 @@ class Chunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Team(Base):
+    """A named destination for handoffs (SAN-1112, FR-H3) — e.g. "Sales",
+    "Support (EU)". Deliberately just a name: routing only needs something
+    to tag a conversation with for the Inbox to filter/sort by; assigning
+    an actual agent to work it still goes through the existing Inbox
+    take-over flow, unchanged."""
+
+    __tablename__ = "teams"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RoutingRule(Base):
+    """First-match-wins rule routing a handed-off conversation to a Team,
+    by the page it started on and/or its detected language (SAN-1112,
+    FR-H3). An empty page_pattern or language matches anything, so a
+    catch-all rule is just one with both left blank, placed last via
+    priority. Evaluated in ascending priority order; no match leaves the
+    conversation unrouted (routed_team_id stays null), same as pre-FR-H3."""
+
+    __tablename__ = "routing_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
+    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id"), index=True)
+    page_pattern: Mapped[str] = mapped_column(String(1024), default="")  # substring match against Conversation.page_url
+    language: Mapped[str] = mapped_column(String(16), default="")  # exact match against Conversation.language
+    priority: Mapped[int] = mapped_column(Integer, default=0)  # lower evaluates first
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class QAPair(Base):
     __tablename__ = "qa_pairs"
 
@@ -227,6 +269,10 @@ class Conversation(Base):
     # moment a turn finds something. Hitting 2 escalates instead of
     # showing a second empty-handed reply.
     consecutive_low_confidence: Mapped[int] = mapped_column(Integer, default=0)
+    # Set once, at the moment of handoff, from the bot's routing rules
+    # (SAN-1112, FR-H3) — matched against this conversation's own page_url/
+    # language, not re-evaluated afterward even if rules change later.
+    routed_team_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("teams.id"), nullable=True)
     # Rolling summary of every turn older than the last 10 (SAN-1093, FR-C5)
     # — summary_msg_count is how many of the client-sent history's older
     # messages are already folded in, so a long-running conversation only
