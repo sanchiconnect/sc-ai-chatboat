@@ -36,6 +36,10 @@ export default function RoutingPage() {
   const [rules, setRules] = useState<RoutingRule[]>([]);
   const [newRule, setNewRule] = useState({ team_id: "", page_pattern: "", language: "", priority: 0 });
 
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState("");
+  const [savingSlack, setSavingSlack] = useState(false);
+  const [slackSaved, setSlackSaved] = useState(false);
+
   useEffect(() => {
     Promise.all([api.getBot(botId), api.listTeams(botId), api.listRoutingRules(botId)])
       .then(([bot, teamList, ruleList]) => {
@@ -55,11 +59,27 @@ export default function RoutingPage() {
         }
         setTeams(teamList);
         setRules(ruleList);
+        setSlackWebhookUrl(bot.slack_webhook_url || "");
         if (teamList.length > 0) setNewRule((r) => ({ ...r, team_id: teamList[0].team_id }));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load routing settings"))
       .finally(() => setLoading(false));
   }, [botId]);
+
+  async function saveSlackWebhook(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSlack(true);
+    setError(null);
+    try {
+      await api.updateBot(botId, { slack_webhook_url: slackWebhookUrl.trim() });
+      setSlackSaved(true);
+      setTimeout(() => setSlackSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save Slack webhook");
+    } finally {
+      setSavingSlack(false);
+    }
+  }
 
   async function saveBusinessHours(e: React.FormEvent) {
     e.preventDefault();
@@ -334,6 +354,32 @@ export default function RoutingPage() {
             </button>
           </form>
         )}
+      </section>
+
+      <section className="border border-border rounded-lg p-4">
+        <h3 className="font-semibold mb-1">Slack notifications</h3>
+        <p className="text-xs text-fg-muted mb-3">
+          Optional — posts to this Slack incoming-webhook URL every time this bot hands a conversation off to a
+          human, in addition to in-app and (opt-out) email notifications. Leave blank to disable.
+        </p>
+        <form onSubmit={saveSlackWebhook} className="flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[260px]">
+            <label className="text-sm font-medium">Slack webhook URL</label>
+            <input
+              className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="https://hooks.slack.com/services/..."
+              value={slackWebhookUrl}
+              onChange={(e) => setSlackWebhookUrl(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={savingSlack}
+            className="bg-accent text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            {savingSlack ? "Saving…" : slackSaved ? "Saved!" : "Save"}
+          </button>
+        </form>
       </section>
     </div>
   );

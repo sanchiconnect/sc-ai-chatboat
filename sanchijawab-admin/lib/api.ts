@@ -92,7 +92,7 @@ export const api = {
     }),
 
   listMembers: (workspaceId: string) =>
-    request<{ user_id: string; email: string; role: string; active: boolean }[]>(
+    request<{ user_id: string; email: string; role: string; active: boolean; email_notifications: boolean }[]>(
       `/v1/workspaces/${workspaceId}/members`,
     ),
 
@@ -236,6 +236,7 @@ export const api = {
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
       crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
+      slack_webhook_url: string;
     }>(`/v1/bots/${botId}`),
 
   installCheck: (botId: string) =>
@@ -248,14 +249,35 @@ export const api = {
     body: Partial<{
       name: string; persona: string; instructions: string; model_tier: string; allowed_domains: string[];
       avatar_id: string; avatar_name: string; crm_webhook_url: string; handoff_keywords: string;
-      business_hours: BusinessHours;
+      business_hours: BusinessHours; slack_webhook_url: string;
     }>,
   ) =>
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
       crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
+      slack_webhook_url: string;
     }>(`/v1/bots/${botId}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  listNotifications: (unreadOnly = false) =>
+    request<{
+      unread_count: number;
+      notifications: {
+        notification_id: string; bot_id: string; conversation_id: string; kind: string;
+        message: string; read: boolean; created_at: string;
+      }[];
+    }>(`/v1/notifications${unreadOnly ? "?unread_only=true" : ""}`),
+
+  markNotificationRead: (notificationId: string) =>
+    request<{ notification_id: string; read: boolean }>(`/v1/notifications/${notificationId}/read`, { method: "POST" }),
+
+  markAllNotificationsRead: () =>
+    request<{ marked_read: boolean }>(`/v1/notifications/mark-all-read`, { method: "POST" }),
+
+  updateNotificationPreferences: (workspaceId: string, emailNotifications: boolean) =>
+    request<{ email_notifications: boolean }>(`/v1/workspaces/${workspaceId}/notification-preferences`, {
+      method: "PATCH", body: JSON.stringify({ email_notifications: emailNotifications }),
+    }),
 
   listTeams: (botId: string) =>
     request<{ team_id: string; name: string }[]>(`/v1/bots/${botId}/teams`),

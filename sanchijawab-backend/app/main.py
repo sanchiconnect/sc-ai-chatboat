@@ -39,7 +39,7 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Order,
+    BillingProfile, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
 from .services import crm, storage
@@ -61,6 +61,7 @@ from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, upsert_gateway
 from .services.payments.invoice import compute_gst_split, generate_invoice_html, render_invoice_pdf
 from .services.payments.sequence import next_invoice_number
+from .services.notifications import notify_handoff
 from .services.pii import mask_pii
 from .services.plan_limits import (
     enforce_file_limit,
@@ -274,6 +275,7 @@ async def list_members(workspace_id: str, user: CurrentUser = Depends(get_curren
             {
                 "user_id": u.id, "email": u.email, "role": m.role,
                 "active": bool(u.password_hash),  # invited-but-not-accepted users have no password yet
+                "email_notifications": m.email_notifications,
             }
             for u, m in rows
         ]
@@ -450,7 +452,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
-            "business_hours": bot.business_hours_json,
+            "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
         }
 
 
@@ -486,6 +488,7 @@ class UpdateBotRequest(BaseModel):
     crm_webhook_url: str | None = None
     handoff_keywords: str | None = None
     business_hours: dict | None = None
+    slack_webhook_url: str | None = None
 
 
 @app.patch("/v1/bots/{bot_id}")
@@ -498,7 +501,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
 
         for field in (
             "name", "persona", "instructions", "model_tier", "avatar_id", "avatar_name",
-            "crm_webhook_url", "handoff_keywords",
+            "crm_webhook_url", "handoff_keywords", "slack_webhook_url",
         ):
             value = getattr(body, field)
             if value is not None:
@@ -514,7 +517,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "allowed_domains": bot.allowed_domains,
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
-            "business_hours": bot.business_hours_json,
+            "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
         }
 
 
@@ -537,6 +540,7 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         if conversation_ids:
             await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
             await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
+            await session.execute(delete(Notification).where(Notification.conversation_id.in_(conversation_ids)))
         await session.execute(delete(Chunk).where(Chunk.bot_id == bot_id))
         if source_ids:
             await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
@@ -667,6 +671,83 @@ async def delete_routing_rule(rule_id: str, user: CurrentUser = Depends(get_curr
         await session.delete(rule)
         await session.commit()
         return {"deleted": True}
+
+
+@app.get("/v1/notifications")
+async def list_notifications(
+    unread_only: bool = False, limit: int = 50, user: CurrentUser = Depends(get_current_user),
+):
+    async with SessionLocal() as session:
+        stmt = (
+            select(Notification)
+            .where(Notification.user_id == user.user_id)
+            .order_by(Notification.created_at.desc())
+            .limit(min(limit, 250))
+        )
+        if unread_only:
+            stmt = stmt.where(Notification.read_at.is_(None))
+        rows = (await session.execute(stmt)).scalars().all()
+        unread_count = (
+            await session.execute(
+                select(func.count()).select_from(Notification).where(
+                    Notification.user_id == user.user_id, Notification.read_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        return {
+            "unread_count": unread_count,
+            "notifications": [
+                {
+                    "notification_id": n.id, "bot_id": n.bot_id, "conversation_id": n.conversation_id,
+                    "kind": n.kind, "message": n.message, "read": n.read_at is not None,
+                    "created_at": n.created_at.isoformat(),
+                }
+                for n in rows
+            ],
+        }
+
+
+@app.post("/v1/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        notif = await session.get(Notification, notification_id)
+        if notif is None or notif.user_id != user.user_id:
+            raise HTTPException(404, "Notification not found")
+        if notif.read_at is None:
+            notif.read_at = datetime.utcnow()
+            await session.commit()
+        return {"notification_id": notif.id, "read": True}
+
+
+@app.post("/v1/notifications/mark-all-read")
+async def mark_all_notifications_read(user: CurrentUser = Depends(get_current_user)):
+    async with SessionLocal() as session:
+        await session.execute(
+            update(Notification)
+            .where(Notification.user_id == user.user_id, Notification.read_at.is_(None))
+            .values(read_at=datetime.utcnow())
+        )
+        await session.commit()
+        return {"marked_read": True}
+
+
+class NotificationPreferenceRequest(BaseModel):
+    email_notifications: bool
+
+
+@app.patch("/v1/workspaces/{workspace_id}/notification-preferences")
+async def update_notification_preferences(
+    workspace_id: str, body: NotificationPreferenceRequest, user: CurrentUser = Depends(get_current_user),
+):
+    """Self-service — a member sets their own preference, unlike
+    update_membership (role changes, which require admin and target someone
+    else)."""
+    membership = await require_workspace_role(workspace_id, user, min_role="viewer")
+    async with SessionLocal() as session:
+        m = await session.get(Membership, membership.id)
+        m.email_notifications = body.email_notifications
+        await session.commit()
+        return {"email_notifications": m.email_notifications}
 
 
 DEFAULT_WIDGET_TEXTS = {"welcome": "Hi! Ask me anything.", "header": "Chat with us"}
@@ -1349,6 +1430,8 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
                     session, conversation_id=conversation_id, tenant_id=bot.tenant_id,
                     role="bot", content=reply,
                 )
+                if conv2 is not None:
+                    await notify_handoff(session, bot=bot, conversation=conv2)
             elif full_text:
                 # confidence is a crude proxy (0.0/1.0), not a real score — just
                 # enough to power the "unanswered/low-confidence" report (FR-R2).
@@ -2502,6 +2585,7 @@ async def staff_delete_workspace(workspace_id: str, _staff: User = Depends(get_c
         if conversation_ids:
             await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
             await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
+            await session.execute(delete(Notification).where(Notification.conversation_id.in_(conversation_ids)))
         if bot_ids:
             await session.execute(delete(Chunk).where(Chunk.bot_id.in_(bot_ids)))
         if source_ids:
@@ -2513,6 +2597,9 @@ async def staff_delete_workspace(workspace_id: str, _staff: User = Depends(get_c
             await session.execute(delete(QAPair).where(QAPair.bot_id.in_(bot_ids)))
             await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id.in_(bot_ids)))
             await session.execute(delete(ToolConnection).where(ToolConnection.bot_id.in_(bot_ids)))
+            # routing_rules has a FK to teams, so it goes first.
+            await session.execute(delete(RoutingRule).where(RoutingRule.bot_id.in_(bot_ids)))
+            await session.execute(delete(Team).where(Team.bot_id.in_(bot_ids)))
         await session.execute(delete(Bot).where(Bot.workspace_id == workspace_id))
         await session.execute(delete(Order).where(Order.workspace_id == workspace_id))
         await session.execute(delete(Membership).where(Membership.workspace_id == workspace_id))

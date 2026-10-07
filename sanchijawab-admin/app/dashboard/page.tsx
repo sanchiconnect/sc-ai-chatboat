@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { NotificationBell } from "@/components/NotificationBell";
 import { resolveWorkspace } from "@/lib/workspace-store";
 
 interface Workspace {
@@ -100,7 +101,10 @@ export default function DashboardOverview() {
               {bots.length} bot{bots.length === 1 ? "" : "s"}
             </p>
           </div>
-          <ProfileMenu email={email} />
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <ProfileMenu email={email} />
+          </div>
         </div>
 
         {loading && <p className="text-fg-muted text-sm">Loading…</p>}

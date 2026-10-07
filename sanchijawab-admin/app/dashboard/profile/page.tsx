@@ -20,20 +20,40 @@ export default function ProfilePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [savingPref, setSavingPref] = useState(false);
+
   useEffect(() => {
-    api.me().then((m) => {
+    api.me().then(async (m) => {
       setEmail(m.email);
       setIsSuperAdmin(m.is_super_admin);
-    }).catch(() => {});
-    api.listWorkspaces().then((list) => {
+
+      const list = await api.listWorkspaces();
       setWorkspaces(list);
       const ws = resolveWorkspace(list);
-      if (ws) {
-        setWorkspaceName(ws.name);
-        setWorkspaceId(ws.workspace_id);
-      }
-    });
+      if (!ws) return;
+      setWorkspaceName(ws.name);
+      setWorkspaceId(ws.workspace_id);
+
+      const members = await api.listMembers(ws.workspace_id).catch(() => []);
+      const mine = members.find((member) => member.email === m.email);
+      if (mine) setEmailNotifications(mine.email_notifications);
+    }).catch(() => {});
   }, []);
+
+  async function togglePreference(checked: boolean) {
+    if (!workspaceId) return;
+    setEmailNotifications(checked);
+    setSavingPref(true);
+    try {
+      await api.updateNotificationPreferences(workspaceId, checked);
+    } catch (err) {
+      setEmailNotifications(!checked);
+      setError(err instanceof ApiError ? err.message : "Failed to save preference");
+    } finally {
+      setSavingPref(false);
+    }
+  }
 
   async function submitPasswordChange(e: React.FormEvent) {
     e.preventDefault();
@@ -79,6 +99,23 @@ export default function ProfilePage() {
             <span className="text-[13px] text-fg-muted">Role</span>
             <span className="text-[13px] font-medium">{isSuperAdmin ? "Super admin" : "Member"}</span>
           </div>
+        </div>
+
+        <div className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg mb-5">
+          <h3 className="font-display text-[16px] font-semibold mb-1">Notifications</h3>
+          <p className="text-[12.5px] text-fg-muted mb-3">
+            In-app notifications always show when a bot needs a human. This only controls whether you also get an
+            email for it.
+          </p>
+          <label className="flex items-center justify-between py-1 cursor-pointer">
+            <span className="text-[13px]">Email me when a conversation needs a human</span>
+            <input
+              type="checkbox"
+              checked={emailNotifications}
+              disabled={savingPref || !workspaceId}
+              onChange={(e) => togglePreference(e.target.checked)}
+            />
+          </label>
         </div>
 
         <form onSubmit={submitPasswordChange} className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg space-y-3">

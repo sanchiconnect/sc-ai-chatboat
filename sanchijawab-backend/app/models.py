@@ -84,6 +84,10 @@ class Membership(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     role: Mapped[str] = mapped_column(String(16), default="owner")  # owner|admin|agent|viewer
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Per-member opt-out of handoff emails (SAN-1113, FR-H4) — in-app
+    # notifications always record regardless, since the member controls
+    # when they're seen (unread badge) rather than being pushed anything.
+    email_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Bot(Base):
@@ -108,6 +112,11 @@ class Bot(Base):
     # product's ecosystem already integrates with CRMs (see Make.com usage
     # elsewhere in the workspace).
     crm_webhook_url: Mapped[str] = mapped_column(String(1024), default="")
+    # Optional Slack incoming-webhook URL (SAN-1113, FR-H4) — same
+    # generic-webhook shape as crm_webhook_url above, posted a plain
+    # {"text": ...} payload that Slack's incoming-webhooks format accepts
+    # without needing the Slack SDK or an app install.
+    slack_webhook_url: Mapped[str] = mapped_column(String(1024), default="")
     # Comma/newline-separated phrases (case-insensitive substring match) —
     # deterministic escalation for things a business always wants a human
     # on, regardless of how the LLM's own ask-for-human detection reads the
@@ -296,6 +305,26 @@ class Message(Base):
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0.0)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # thumbs: 1 | -1
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Notification(Base):
+    """In-app notification for a workspace member (SAN-1113, FR-H4) —
+    recorded for every owner/admin/agent on a handoff, independent of
+    whether email/Slack delivery also happened or succeeded. Read state is
+    per-recipient, so one handoff creates one row per eligible member."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.id"), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(36), ForeignKey("conversations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="handoff")
+    message: Mapped[str] = mapped_column(String(512))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

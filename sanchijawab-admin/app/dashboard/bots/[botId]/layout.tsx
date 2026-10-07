@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const TABS = [
   {
@@ -149,7 +150,8 @@ export default function BotLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="min-w-0">
-        <div className="flex justify-end mb-3">
+        <div className="flex justify-end items-center gap-2 mb-3">
+          <NotificationBell />
           <ProfileMenu email={email} />
         </div>
         {children}
