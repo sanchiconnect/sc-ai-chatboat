@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Embeddings
     embed_provider: str = "fastembed"
     embed_dim: int = 384
+    # Per-IP rate limiting on login/signup and public widget routes (SAN-1126).
+    rate_limit_enabled: bool = True
+
     # Optional rerank step (FR-C hybrid retrieval): retrieve 30, rerank to
     # top_k. Off when cohere_api_key is empty.
     cohere_api_key: str = ""

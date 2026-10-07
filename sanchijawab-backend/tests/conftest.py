@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from app.config import settings
 from app.db import engine
 from app.main import app
+from app.services import ratelimit
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -25,6 +28,14 @@ async def _dispose_engine_per_test():
     a different loop" trying to reuse test 1's pooled connections."""
     yield
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _rate_limit_off(monkeypatch):
+    """The suite signs up many users from one fake IP; the rate-limit tests
+    turn this back on explicitly."""
+    monkeypatch.setattr(settings, "rate_limit_enabled", False)
+    ratelimit.reset()
 
 
 @pytest_asyncio.fixture

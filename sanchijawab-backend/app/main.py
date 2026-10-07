@@ -75,6 +75,7 @@ from .services.plan_limits import (
 )
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
+from .services.ratelimit import rate_limit
 from .services.routing import is_within_business_hours, route_team
 from .services.tracing import get_langfuse
 
@@ -117,7 +118,7 @@ class SignupRequest(BaseModel):
     business_name: str
 
 
-@app.post("/v1/auth/signup")
+@app.post("/v1/auth/signup", dependencies=[Depends(rate_limit("signup", limit=20, window_seconds=3600))])
 async def signup(body: SignupRequest):
     async with SessionLocal() as session:
         existing = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
@@ -159,7 +160,7 @@ class LoginRequest(BaseModel):
     password: str
 
 
-@app.post("/v1/auth/login")
+@app.post("/v1/auth/login", dependencies=[Depends(rate_limit("login", limit=10, window_seconds=60))])
 async def login(body: LoginRequest):
     async with SessionLocal() as session:
         user = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
@@ -1395,7 +1396,7 @@ class ChatRequest(BaseModel):
     page_url: str = ""
 
 
-@app.post("/public/w/{bot_id}/chat")
+@app.post("/public/w/{bot_id}/chat", dependencies=[Depends(rate_limit("chat", limit=30, window_seconds=60))])
 async def public_chat(bot_id: str, body: ChatRequest, request: Request):
     async with SessionLocal() as session:
         bot = await session.get(Bot, bot_id)
@@ -1585,7 +1586,7 @@ async def _push_lead_and_record(bot_id: str, bot_name: str, webhook_url: str, le
                 await session.commit()
 
 
-@app.post("/public/w/{bot_id}/lead")
+@app.post("/public/w/{bot_id}/lead", dependencies=[Depends(rate_limit("lead", limit=10, window_seconds=300))])
 async def public_create_lead(bot_id: str, body: LeadRequest, request: Request, background_tasks: BackgroundTasks):
     async with SessionLocal() as session:
         bot = await session.get(Bot, bot_id)
@@ -1621,7 +1622,7 @@ class EmailTranscriptRequest(BaseModel):
     email: EmailStr
 
 
-@app.post("/public/w/{bot_id}/transcript/email")
+@app.post("/public/w/{bot_id}/transcript/email", dependencies=[Depends(rate_limit("transcript", limit=5, window_seconds=300))])
 async def email_transcript(bot_id: str, body: EmailTranscriptRequest, request: Request):
     """The other half of FR-W10 — the widget's download button already
     saves a transcript client-side; this emails the same content instead,
@@ -2391,7 +2392,7 @@ class StaffLoginRequest(BaseModel):
     password: str
 
 
-@app.post("/v1/staff/login")
+@app.post("/v1/staff/login", dependencies=[Depends(rate_limit("staff-login", limit=10, window_seconds=60))])
 async def staff_login(body: StaffLoginRequest):
     async with SessionLocal() as session:
         user = (await session.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
@@ -2770,7 +2771,7 @@ class ContactRequest(BaseModel):
         return v.strip()[:5000]
 
 
-@app.post("/public/contact")
+@app.post("/public/contact", dependencies=[Depends(rate_limit("contact", limit=5, window_seconds=300))])
 async def submit_contact(body: ContactRequest):
     html = f"""
     <p><strong>From:</strong> {body.name} &lt;{body.email}&gt;</p>
