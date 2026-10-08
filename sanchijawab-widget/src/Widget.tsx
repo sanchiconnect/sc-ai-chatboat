@@ -353,6 +353,15 @@ export function Widget(props: WidgetProps) {
             return next;
           });
           if (event.handed_off) setHandedOff(true);
+        } else if (event.type === "follow_ups") {
+          // Arrives after "done": the answer is already complete and the
+          // input is free; the chips just appear a moment later.
+          setMessages((m) => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            next[next.length - 1] = { ...last, followUps: event.follow_ups };
+            return next;
+          });
         } else if (event.type === "action_proposal" && event.pending_id) {
           setMessages((m) => {
             const next = [...m];
@@ -506,7 +515,15 @@ export function Widget(props: WidgetProps) {
                 ) : m.content ? (
                   <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
                 ) : (
-                  m.pending ? "\u2026" : ""
+                  m.pending ? (
+                    <span class="sj-typing" role="status" aria-label="Typing">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  ) : (
+                    ""
+                  )
                 )}
                 {m.role === "bot" && m.messageId && !m.pending && (
                   <div class="sj-rating">

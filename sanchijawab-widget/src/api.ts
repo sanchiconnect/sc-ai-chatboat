@@ -8,7 +8,7 @@ export interface ProductCard {
 }
 
 export interface ChatEvent {
-  type: "delta" | "done" | "handoff" | "conversation" | "message_saved" | "action_proposal";
+  type: "delta" | "done" | "handoff" | "conversation" | "message_saved" | "action_proposal" | "follow_ups";
   text?: string;
   no_answer?: boolean;
   sources?: { url: string | null; chunk_id: string }[];
