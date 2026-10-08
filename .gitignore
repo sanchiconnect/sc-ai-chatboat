@@ -25,3 +25,5 @@ sanchijawab-widget/dist/
 sanchijawab-widget/widget_test_screenshot.png
 
 sanchijawab-backend/app/eval/last_run.json
+
+integrations/dist/

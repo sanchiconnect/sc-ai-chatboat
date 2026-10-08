@@ -1,0 +1,55 @@
+{%- comment -%}
+  SanchiJawab Chat: a Shopify "app embed". Once the app is installed, the merchant switches it on under
+  Online Store > Themes > Customize > App embeds, and fills in the three settings below.
+  The `json` filter makes every value safe to place inside the <script>.
+{%- endcomment -%}
+{%- assign bot = block.settings.bot_id | strip -%}
+{%- if bot != blank and block.settings.api_url != blank and block.settings.widget_url != blank -%}
+<script>
+  window.__sj = window.__sj || {};
+  window.__sj.botId = {{ bot | json }};
+  window.__sj.api = {{ block.settings.api_url | strip | json }};
+  (function (w, d) {
+    var q = [];
+    function stub(m) { return function () { q.push([m, [].slice.call(arguments)]); }; }
+    w.SanchiJawab = w.SanchiJawab || { _q: q, open: stub("open"), close: stub("close"), identify: stub("identify") };
+    var s = d.createElement("script");
+    s.async = true;
+    s.src = {{ block.settings.widget_url | strip | json }};
+    s.setAttribute("data-bot", w.__sj.botId);
+    s.setAttribute("data-api", w.__sj.api);
+    d.head.appendChild(s);
+{%- if customer %}
+    // Pre-fill the lead form for logged-in customers.
+    w.SanchiJawab.identify({ name: {{ customer.name | json }}, email: {{ customer.email | json }} });
+{%- endif %}
+  })(window, document);
+</script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "SanchiJawab Chat",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "bot_id",
+      "label": "Bot ID",
+      "info": "Copy it from your SanchiJawab dashboard: your assistant > Install."
+    },
+    {
+      "type": "text",
+      "id": "api_url",
+      "label": "API address",
+      "info": "For example https://api.example.com"
+    },
+    {
+      "type": "text",
+      "id": "widget_url",
+      "label": "Widget address",
+      "info": "The full address of widget.js, for example https://cdn.example.com/widget.js"
+    }
+  ]
+}
+{% endschema %}

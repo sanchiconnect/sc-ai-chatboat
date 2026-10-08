@@ -10,6 +10,62 @@ import { api, ApiError } from "@/lib/api";
 const WIDGET_SRC = process.env.NEXT_PUBLIC_WIDGET_URL || "http://localhost:5500/widget.js";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const PLATFORMS: { name: string; steps: string[]; note?: string }[] = [
+  {
+    name: "WordPress",
+    steps: [
+      "Easiest: ask your developer for the SanchiJawab Chat plugin (a zip file), then Plugins > Add New > Upload Plugin and activate it.",
+      "Open Settings > SanchiJawab Chat and paste your Bot ID plus the two addresses shown at the top of this page.",
+      "No plugin? Paste the code above into your theme's footer, or use a header/footer plugin.",
+    ],
+  },
+  {
+    name: "Shopify",
+    steps: [
+      "Online Store > Themes > the three dots > Edit code.",
+      "Open layout/theme.liquid and paste the code just before </body>.",
+      "Save, then open your store to see the chat bubble.",
+    ],
+  },
+  {
+    name: "Webflow",
+    steps: [
+      "Project settings > Custom code.",
+      "Paste the code into Footer code and save.",
+      "Publish the site (custom code only runs on the published site).",
+    ],
+    note: "Custom code needs a paid Webflow site plan.",
+  },
+  {
+    name: "Google Tag Manager",
+    steps: [
+      "Tags > New > Tag configuration > Custom HTML.",
+      "Paste the code above, then set the trigger to All Pages.",
+      "Save, then Submit and Publish the container.",
+    ],
+  },
+  {
+    name: "Wix",
+    steps: [
+      "Settings > Custom code > Add custom code.",
+      "Paste the code, choose Body - end, and apply it to All pages.",
+    ],
+    note: "Needs a Wix Premium plan.",
+  },
+  {
+    name: "Squarespace",
+    steps: ["Settings > Advanced > Code injection.", "Paste the code into the Footer box and save."],
+    note: "Needs a Business plan or higher.",
+  },
+  {
+    name: "React, Next.js and other single-page apps",
+    steps: [
+      "Paste the code into your main HTML file (index.html) or root layout, before </body>.",
+      "The chat stays open as visitors move between pages. Call SanchiJawab.open() from a button if you want one.",
+    ],
+  },
+];
+
 type CheckResult = { installed: boolean; last_seen_at: string | null; last_seen_host: string | null };
 
 export default function InstallPage() {
@@ -94,6 +150,26 @@ export default function InstallPage() {
           {simpleSnippet}
         </pre>
       </details>
+
+      <div className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5">
+        <h3 className="text-[15px] font-semibold text-fg mb-1">Install on your platform</h3>
+        <p className="text-[13px] text-fg-muted mb-3">
+          The code above goes on every page. Here is where to put it on common website builders.
+        </p>
+        <div className="divide-y divide-border text-[13px]">
+          {PLATFORMS.map((p) => (
+            <details key={p.name} className="py-2">
+              <summary className="cursor-pointer font-medium">{p.name}</summary>
+              <ol className="list-decimal ml-5 mt-2 space-y-1 text-fg-muted">
+                {p.steps.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+              {p.note && <p className="mt-2 text-[12px] text-fg-faint">{p.note}</p>}
+            </details>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5">
         <h3 className="text-[15px] font-semibold text-fg mb-1">Is it actually live?</h3>
