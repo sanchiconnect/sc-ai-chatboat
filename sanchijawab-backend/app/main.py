@@ -79,6 +79,7 @@ from .services.plan_limits import (
 from .services.qa import create_qa_pair
 from .services.rag import answer_stream
 from .services.platform_settings import SETTINGS as PLATFORM_SETTINGS
+from .services.workspace_delete import delete_workspace
 from .services.platform_settings import all_settings, get_setting, set_setting
 from .services.ratelimit import rate_limit
 from .services.urlsafety import UnsafeURLError, assert_public_url
@@ -3123,52 +3124,8 @@ async def staff_delete_workspace(workspace_id: str, _staff: User = Depends(get_c
     instead of one.
     """
     async with SessionLocal() as session:
-        workspace = await session.get(Workspace, workspace_id)
-        if workspace is None:
+        if not await delete_workspace(session, workspace_id):
             raise HTTPException(404, "Workspace not found")
-
-        bot_ids = (await session.execute(select(Bot.id).where(Bot.workspace_id == workspace_id))).scalars().all()
-        source_ids = (await session.execute(select(Source.id).where(Source.bot_id.in_(bot_ids)))).scalars().all()
-        conversation_ids = (
-            await session.execute(select(Conversation.id).where(Conversation.bot_id.in_(bot_ids)))
-        ).scalars().all()
-        member_user_ids = (
-            await session.execute(select(Membership.user_id).where(Membership.workspace_id == workspace_id))
-        ).scalars().all()
-
-        if conversation_ids:
-            await session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
-            await session.execute(delete(Lead).where(Lead.conversation_id.in_(conversation_ids)))
-            await session.execute(delete(Notification).where(Notification.conversation_id.in_(conversation_ids)))
-        if bot_ids:
-            await session.execute(delete(Chunk).where(Chunk.bot_id.in_(bot_ids)))
-        if source_ids:
-            await session.execute(delete(IngestJob).where(IngestJob.source_id.in_(source_ids)))
-            await session.execute(delete(Document).where(Document.source_id.in_(source_ids)))
-        if bot_ids:
-            await session.execute(delete(Source).where(Source.bot_id.in_(bot_ids)))
-            await session.execute(delete(Conversation).where(Conversation.bot_id.in_(bot_ids)))
-            await session.execute(delete(QAPair).where(QAPair.bot_id.in_(bot_ids)))
-            await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id.in_(bot_ids)))
-            await session.execute(delete(Product).where(Product.bot_id.in_(bot_ids)))
-            await session.execute(delete(ToolConnection).where(ToolConnection.bot_id.in_(bot_ids)))
-            # routing_rules has a FK to teams, so it goes first.
-            await session.execute(delete(RoutingRule).where(RoutingRule.bot_id.in_(bot_ids)))
-            await session.execute(delete(Team).where(Team.bot_id.in_(bot_ids)))
-        await session.execute(delete(Bot).where(Bot.workspace_id == workspace_id))
-        await session.execute(delete(Order).where(Order.workspace_id == workspace_id))
-        await session.execute(delete(Membership).where(Membership.workspace_id == workspace_id))
-        await session.delete(workspace)
-
-        if member_user_ids:
-            remaining = select(Membership.user_id).distinct()
-            await session.execute(
-                delete(User).where(
-                    User.id.in_(member_user_ids), User.id.notin_(remaining), User.is_super_admin.is_(False)
-                )
-            )
-
-        await session.commit()
         return {"deleted": True}
 
 

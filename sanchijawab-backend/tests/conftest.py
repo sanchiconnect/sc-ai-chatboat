@@ -75,3 +75,28 @@ async def bot(client: AsyncClient, signed_up_owner: dict):
     )
     resp.raise_for_status()
     return resp.json()["bot_id"]
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """The suite signs up hundreds of throwaway users (some promoted to super admin to test the admin screens) and
+    used to leave them all in the database. Remove what THIS suite creates (pytest_/invitee_ addresses only, never
+    anything made by hand). Set KEEP_TEST_DATA=1 to keep them for debugging."""
+    import asyncio
+    import os
+
+    if os.environ.get("KEEP_TEST_DATA"):
+        return
+
+    async def sweep():
+        from app.cleanup_test_data import TEST_RUN_PATTERN, run
+        from app.db import engine
+
+        try:
+            await run(True, TEST_RUN_PATTERN, quiet=True)
+        finally:
+            await engine.dispose()
+
+    try:
+        asyncio.run(sweep())
+    except Exception as e:  # never turn a green test run red because the tidy-up failed
+        print(f"\n(test-account cleanup skipped: {e.__class__.__name__}: {e})")
