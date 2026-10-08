@@ -10,8 +10,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import (
-    ApiKey, Bot, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order, Product,
-    QAPair, RoutingRule, Source, Team, ToolConnection, User, WidgetConfig, Workspace,
+    ActionLog, ApiKey, Bot, BotAction, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order, Product,
+    PendingAction, QAPair, RoutingRule, Source, Team, ToolConnection, User, WidgetConfig, Workspace,
 )
 
 
@@ -45,6 +45,9 @@ async def delete_workspace(session: AsyncSession, workspace_id: str, *, also_sup
         await session.execute(delete(QAPair).where(QAPair.bot_id.in_(bot_ids)))
         await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id.in_(bot_ids)))
         await session.execute(delete(Product).where(Product.bot_id.in_(bot_ids)))
+        await session.execute(delete(PendingAction).where(PendingAction.bot_id.in_(bot_ids)))
+        await session.execute(delete(ActionLog).where(ActionLog.bot_id.in_(bot_ids)))
+        await session.execute(delete(BotAction).where(BotAction.bot_id.in_(bot_ids)))
         await session.execute(delete(ToolConnection).where(ToolConnection.bot_id.in_(bot_ids)))
         # routing_rules has a FK to teams, so it goes first.
         await session.execute(delete(RoutingRule).where(RoutingRule.bot_id.in_(bot_ids)))

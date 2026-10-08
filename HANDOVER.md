@@ -37,6 +37,7 @@ separate Super Admin console.
   (dashboard and widget, automated scan with no failures).
 - **Products in chat:** a product list per assistant (add by hand or import a CSV) with picture, price and link; when a visitor asks about something related the bot mentions it and shows it as a card, matched by meaning and only for clear matches.
 - **Public API and MCP server:** workspace admins create API keys; with a key, other software or an AI assistant (such as Claude) can read conversations and leads and ask an assistant questions. Keys are shown once, stored hashed, revocable, rate limited.
+- **Actions the assistant can take:** a business defines an action (for example "Book a demo": a name, the details to collect, and the address of its own server). When a visitor asks for it, the assistant collects the details, shows a card, and calls the business's server only after the visitor presses Confirm (read-only look-ups can skip the confirmation). Calls are signed so the business can verify them, go to public addresses only, and are logged in the dashboard.
 - **Operations tools:** `scripts\backup-db.ps1` and `restore-db.ps1 -Drill` (a restore drill passed on the real database), and `python -m app.preflight`, which reads the real settings and lists in plain words what to fix before launch.
 - **Quality checks:** 87 automated tests, a load test, and a 150-question quality evaluation with a saved baseline and a
   weekly GitHub check.
@@ -45,7 +46,7 @@ separate Super Admin console.
 
 | Measure | Result |
 |---|---|
-| Automated tests | 100 pass (plus 13 checks on the WordPress plugin) |
+| Automated tests | 123 pass (plus 13 checks on the WordPress plugin) |
 | Answer groundedness (sampled, judged by AI) | 97 / 100 (target 90) |
 | Questions the bot declined on 5 real sites | 22% (43% on one clothing-brand site, 10% on the best) |
 | Time to a full answer | about 7 s median (was 11 s before turning off Gemini's hidden "thinking") |
@@ -62,7 +63,7 @@ because only 40 pages were crawled in the test.
 | WhatsApp, Instagram, Messenger channels | Need Meta business accounts and app review. |
 | CRM (HubSpot/Zoho), Shopify/WooCommerce order lookup, calendar booking, Google Drive/Notion import | Need those companies' developer accounts. A generic webhook for leads already works. |
 | Single sign-on (Google Workspace, SAML) | Needs an identity provider to test with. |
-| "Bot takes actions" engine (booking, order changes, with visitor confirmation) | Not started; the real connectors it would call need the outside accounts above. |
+| Ready-made connectors (HubSpot, Zoho, Shopify orders, Google Calendar) | The actions engine below is built and works with any server that can receive a signed web request; the named connectors need those companies' accounts. |
 | Enforced Content-Security-Policy | Written and sent in report-only mode; switch to enforcing (`CSP_ENFORCE=true`) after a click-through on the real site. |
 | Multi-region / data residency | Depends on hosting. |
 | Screen-reader and keyboard-only testing | Only automated accessibility scans were run. |

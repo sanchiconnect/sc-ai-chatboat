@@ -41,6 +41,19 @@ export interface WidgetTrigger {
   variant?: "" | "A" | "B";
 }
 
+export interface ActionParam {
+  name: string; description: string; required: boolean;
+}
+
+export interface ActionInput {
+  name: string; label: string; description: string; url: string; params: ActionParam[];
+  requires_confirmation: boolean; enabled: boolean;
+}
+
+export interface ActionRow extends ActionInput {
+  action_id: string; signed: boolean;
+}
+
 export interface ProductInput {
   name: string; price: string; description: string; image_url: string; url: string;
 }
@@ -402,6 +415,27 @@ export const api = {
     request<
       { trigger_id: string; type: string; message: string; variant: string; shown: number; clicked: number; click_rate: number | null }[]
     >(`/v1/bots/${botId}/analytics/triggers`),
+
+  listActions: (botId: string) => request<ActionRow[]>(`/v1/bots/${botId}/actions`),
+
+  createAction: (botId: string, body: ActionInput) =>
+    request<ActionRow & { secret: string; secret_note: string }>(`/v1/bots/${botId}/actions`, { method: "POST", body: JSON.stringify(body) }),
+
+  editAction: (actionId: string, body: ActionInput) =>
+    request<ActionRow>(`/v1/actions/${actionId}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  deleteAction: (actionId: string) => request<{ deleted: boolean }>(`/v1/actions/${actionId}`, { method: "DELETE" }),
+
+  rotateActionSecret: (actionId: string) =>
+    request<{ secret: string; secret_note: string }>(`/v1/actions/${actionId}/rotate-secret`, { method: "POST" }),
+
+  testAction: (actionId: string) =>
+    request<{ ok: boolean; message: string; error: string }>(`/v1/actions/${actionId}/test`, { method: "POST" }),
+
+  actionLog: (botId: string) =>
+    request<{ action: string; ok: boolean; http_status: number | null; confirmed_by_visitor: boolean; duration_ms: number; error: string; at: string }[]>(
+      `/v1/bots/${botId}/actions/log`,
+    ),
 
   listProducts: (botId: string) =>
     request<ProductRow[]>(`/v1/bots/${botId}/products`),

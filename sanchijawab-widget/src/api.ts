@@ -8,7 +8,7 @@ export interface ProductCard {
 }
 
 export interface ChatEvent {
-  type: "delta" | "done" | "handoff" | "conversation" | "message_saved";
+  type: "delta" | "done" | "handoff" | "conversation" | "message_saved" | "action_proposal";
   text?: string;
   no_answer?: boolean;
   sources?: { url: string | null; chunk_id: string }[];
@@ -17,6 +17,9 @@ export interface ChatEvent {
   message_id?: string;
   follow_ups?: string[];
   products?: ProductCard[];
+  pending_id?: string;
+  label?: string;
+  fields?: { name: string; value: string }[];
 }
 
 export interface ChatHistoryTurn {
@@ -100,6 +103,23 @@ export async function pollMessages(
     return await resp.json();
   } catch {
     return null;
+  }
+}
+
+export async function decideAction(
+  apiBase: string, botId: string, pendingId: string, decision: "confirm" | "cancel", conversationId: string, visitorId: string,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const resp = await fetch(`${apiBase}/public/w/${botId}/actions/${pendingId}/${decision}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, visitor_id: visitorId }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, message: typeof data.detail === "string" ? data.detail : "" };
+    return { ok: decision === "cancel" ? true : !!data.ok, message: data.message || "" };
+  } catch {
+    return { ok: false, message: "" };
   }
 }
 

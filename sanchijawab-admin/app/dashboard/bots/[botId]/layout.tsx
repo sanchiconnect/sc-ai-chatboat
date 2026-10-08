@@ -51,6 +51,15 @@ const TABS = [
     ),
   },
   {
+    href: "actions",
+    label: "Actions",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
+      </svg>
+    ),
+  },
+  {
     href: "widget",
     label: "Widget",
     icon: (

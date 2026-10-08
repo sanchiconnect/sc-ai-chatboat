@@ -498,6 +498,64 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class BotAction(Base):
+    """Something the assistant can DO on a visitor's behalf by calling the customer's own web address (SAN-1801):
+    book a demo, look up an order, create a ticket. Anything that changes data needs the visitor's explicit
+    confirmation before it runs (requires_confirmation, on by default)."""
+
+    __tablename__ = "bot_actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))  # machine name, e.g. book_demo
+    label: Mapped[str] = mapped_column(String(100))  # shown to the visitor on the confirm card
+    description: Mapped[str] = mapped_column(Text)  # tells the model WHEN to use it
+    url: Mapped[str] = mapped_column(String(1024))
+    # [{"name": "email", "description": "Visitor's email", "required": true}]
+    params_json: Mapped[list] = mapped_column(JSON, default=list)
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    secret_enc: Mapped[str] = mapped_column(Text, default="")  # Fernet-encrypted signing secret
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PendingAction(Base):
+    """A proposed action waiting for the visitor to press Confirm. Stored on the server so the parameters cannot be
+    changed between the proposal and the confirmation, and each proposal can be used once."""
+
+    __tablename__ = "pending_actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), index=True)
+    action_id: Mapped[str] = mapped_column(String(36))
+    conversation_id: Mapped[str] = mapped_column(String(36), index=True)
+    visitor_id: Mapped[str] = mapped_column(String(64), default="")
+    params_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="pending")  # pending|confirmed|cancelled|expired
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class ActionLog(Base):
+    """One row per attempt to call an action, so a customer can see what the assistant did."""
+
+    __tablename__ = "action_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), index=True)
+    action_name: Mapped[str] = mapped_column(String(64))
+    conversation_id: Mapped[str] = mapped_column(String(36), default="")
+    confirmed_by_visitor: Mapped[bool] = mapped_column(Boolean, default=False)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ApiKey(Base):
     """Workspace-level key for the read-only public API and MCP server. Only a
     SHA-256 hash is stored; the raw key is shown to the creator exactly once."""

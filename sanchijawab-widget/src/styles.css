@@ -98,6 +98,72 @@
   to { opacity: 1; transform: none; }
 }
 
+.sj-action {
+  margin-top: 8px;
+  border: 1px solid var(--sj-border);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--sj-bubble-bg);
+  color: var(--sj-text);
+}
+.sj-action-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.sj-action-fields {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.sj-action-fields dt {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.sj-action-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sj-action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sj-action-confirm,
+.sj-action-cancel {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+.sj-action-confirm {
+  border: none;
+  color: #fff;
+}
+.sj-action-cancel {
+  background: transparent;
+  color: var(--sj-text);
+  border: 1px solid var(--sj-border);
+}
+.sj-action-confirm:disabled,
+.sj-action-cancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.sj-action-result {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.sj-action-failed {
+  color: #b32d2e;
+}
+.sj-theme-dark .sj-action-failed {
+  color: #ff8a8a;
+}
+
 .sj-products {
   display: flex;
   flex-direction: column;

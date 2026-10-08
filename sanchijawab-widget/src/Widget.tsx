@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { watchTriggers, type Trigger } from "./triggers";
 import {
-  streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, sendTriggerEvent,
+  decideAction, streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, sendTriggerEvent,
   type ChatHistoryTurn, type ProductCard,
 } from "./api";
 import { renderMarkdown } from "./markdown";
@@ -46,6 +46,7 @@ interface Message {
   rated?: 1 | -1;
   followUps?: string[];
   products?: ProductCard[];
+  proposal?: { pendingId: string; label: string; fields: { name: string; value: string }[]; state: "open" | "working" | "done" | "cancelled" | "failed"; result?: string };
 }
 
 function downloadTranscript(botId: string, messages: Message[]) {
@@ -308,6 +309,17 @@ export function Widget(props: WidgetProps) {
 
   const consentBlocking = props.requireConsent && consent !== "accepted";
 
+  async function decide(index: number, decision: "confirm" | "cancel") {
+    const proposal = messages[index]?.proposal;
+    if (!proposal || proposal.state !== "open" || !conversationId) return;
+    const setState = (patch: Partial<NonNullable<Message["proposal"]>>) =>
+      setMessages((m) => m.map((x, i) => (i === index && x.proposal ? { ...x, proposal: { ...x.proposal, ...patch } } : x)));
+    setState({ state: decision === "confirm" ? "working" : "cancelled" });
+    const result = await decideAction(props.apiBase, props.botId, proposal.pendingId, decision, conversationId, visitorIdRef.current);
+    if (decision === "cancel") return;
+    setState({ state: result.ok ? "done" : "failed", result: result.message });
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || sending || consentBlocking) return;
@@ -341,6 +353,16 @@ export function Widget(props: WidgetProps) {
             return next;
           });
           if (event.handed_off) setHandedOff(true);
+        } else if (event.type === "action_proposal" && event.pending_id) {
+          setMessages((m) => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            next[next.length - 1] = {
+              ...last,
+              proposal: { pendingId: event.pending_id!, label: event.label ?? "", fields: event.fields ?? [], state: "open" },
+            };
+            return next;
+          });
         } else if (event.type === "message_saved") {
           setMessages((m) => {
             const next = [...m];
@@ -518,6 +540,39 @@ export function Widget(props: WidgetProps) {
                     >
                       {"\u{1F44E}"}
                     </button>
+                  </div>
+                )}
+                {m.proposal && (
+                  <div class="sj-action" role="group" aria-label={m.proposal.label}>
+                    <div class="sj-action-title">{m.proposal.label}</div>
+                    {m.proposal.fields.length > 0 && (
+                      <dl class="sj-action-fields">
+                        {m.proposal.fields.map((f) => (
+                          <div key={f.name}>
+                            <dt>{f.name}</dt>
+                            <dd>{f.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    {(m.proposal.state === "open" || m.proposal.state === "working") && (
+                      <div class="sj-action-buttons">
+                        <button
+                          class="sj-action-confirm"
+                          style={{ background: props.primaryColor }}
+                          disabled={m.proposal.state === "working"}
+                          onClick={() => decide(i, "confirm")}
+                        >
+                          {m.proposal.state === "working" ? t.actionWorking : t.confirmAction}
+                        </button>
+                        <button class="sj-action-cancel" disabled={m.proposal.state === "working"} onClick={() => decide(i, "cancel")}>
+                          {t.cancelAction}
+                        </button>
+                      </div>
+                    )}
+                    {m.proposal.state === "done" && <div class="sj-action-result" role="status">{m.proposal.result}</div>}
+                    {m.proposal.state === "failed" && <div class="sj-action-result sj-action-failed" role="alert">{m.proposal.result || t.actionFailed}</div>}
+                    {m.proposal.state === "cancelled" && <div class="sj-action-result" role="status">{t.actionCancelled}</div>}
                   </div>
                 )}
                 {m.products && m.products.length > 0 && (

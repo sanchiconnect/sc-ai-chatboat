@@ -45,7 +45,7 @@ from .models import (
     AuditLog, BillingProfile, Product, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
-from . import products_api, public_api
+from . import actions_api, products_api, public_api
 from .services import crm, llm, privacy, retrieval, storage
 from .services.auth import (
     create_access_token,
@@ -98,6 +98,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="SanchiJawab API", lifespan=lifespan)
 app.include_router(public_api.router)  # API-key REST + MCP server (SAN-1806)
 app.include_router(products_api.router)  # product catalogue (SAN-1800)
+app.include_router(actions_api.router)  # bot actions with visitor confirmation (SAN-1801)
 
 # The widget is embedded on arbitrary customer domains by design — the
 # public/w/* routes MUST be callable cross-origin from anywhere, there's no
@@ -614,6 +615,7 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         await session.execute(delete(QAPair).where(QAPair.bot_id == bot_id))
         await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id == bot_id))
         await session.execute(delete(Product).where(Product.bot_id == bot_id))
+        await actions_api.delete_actions_for_bots(session, [bot_id])
         await session.execute(delete(ToolConnection).where(ToolConnection.bot_id == bot_id))
         # routing_rules has a FK to teams, so it goes first.
         await session.execute(delete(RoutingRule).where(RoutingRule.bot_id == bot_id))
@@ -1597,6 +1599,7 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
         routed_team_id: str | None = None
         routed_team_name: str | None = None
         no_answer = False
+        proposal_label: str | None = None
         async with SessionLocal() as session:
             async for event in answer_stream(
                 session, tenant_id=bot.tenant_id, bot_id=bot_id,
@@ -1622,6 +1625,8 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
                             team = await session.get(Team, routed_team_id)
                             routed_team_name = team.name if team else None
                     event = {**event, "within_business_hours": within_hours, "team": routed_team_name}
+                elif event["type"] == "action_proposal":
+                    proposal_label = event["label"]
                 elif event["type"] == "done":
                     sources = event.get("sources") or []
                     no_answer = bool(event.get("no_answer"))
@@ -1652,6 +1657,14 @@ async def public_chat(bot_id: str, body: ChatRequest, request: Request):
                 )
                 if conv2 is not None:
                     await notify_handoff(session, bot=bot, conversation=conv2)
+            elif proposal_label:
+                # Shows up in the Inbox transcript; the visitor sees a confirm card in the widget instead.
+                await add_message(
+                    session, conversation_id=conversation_id, tenant_id=bot.tenant_id, role="bot",
+                    content=f"[Waiting for the visitor to confirm: {proposal_label}]", confidence=1.0,
+                )
+                await session.commit()
+                return
             elif full_text:
                 # confidence is a crude proxy (0.0/1.0), not a real score — just
                 # enough to power the "unanswered/low-confidence" report (FR-R2).

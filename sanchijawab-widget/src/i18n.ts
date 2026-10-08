@@ -20,6 +20,11 @@ export interface WidgetStrings {
   source: string;
   sourceN: (n: number) => string;
   viewProduct: string;
+  confirmAction: string;
+  cancelAction: string;
+  actionCancelled: string;
+  actionFailed: string;
+  actionWorking: string;
   connectingToTeam: string;
   emailTranscript: string;
   emailTranscriptPlaceholder: string;
@@ -53,6 +58,11 @@ const EN: WidgetStrings = {
   source: "Source",
   sourceN: (n) => `Source ${n}`,
   viewProduct: "View",
+  confirmAction: "Confirm",
+  cancelAction: "Cancel",
+  actionCancelled: "Cancelled. Nothing was done.",
+  actionFailed: "Sorry, that didn't work. Please try again or contact the team.",
+  actionWorking: "Working on it…",
   connectingToTeam: "Connecting you with our team — someone will be with you shortly.",
   emailTranscript: "Email transcript",
   emailTranscriptPlaceholder: "Your email address",
@@ -89,6 +99,11 @@ const HI: WidgetStrings = {
   source: "स्रोत",
   sourceN: (n) => `स्रोत ${n}`,
   viewProduct: "देखें",
+  confirmAction: "पुष्टि करें",
+  cancelAction: "रद्द करें",
+  actionCancelled: "रद्द किया गया। कुछ नहीं किया गया।",
+  actionFailed: "क्षमा करें, यह नहीं हो पाया। कृपया दोबारा कोशिश करें या टीम से संपर्क करें।",
+  actionWorking: "प्रक्रिया जारी है…",
   connectingToTeam: "आपको हमारी टीम से जोड़ा जा रहा है — कोई जल्द ही आपसे संपर्क करेगा।",
   emailTranscript: "बातचीत ईमेल करें",
   emailTranscriptPlaceholder: "आपका ईमेल पता",

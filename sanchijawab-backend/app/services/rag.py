@@ -13,6 +13,7 @@ from langfuse import propagate_attributes
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Bot, Conversation
+from . import actions as actions_svc
 from . import llm, products, retrieval
 from .tracing import get_langfuse
 
@@ -144,11 +145,45 @@ async def answer_stream(
             yield {"type": "done", "no_answer": False, "sources": [], "follow_ups": []}
             return
 
+        # Bot actions (SAN-1801): is the visitor asking the assistant to DO something (book, look up, create)?
+        # The model only proposes; anything that changes data waits for the visitor's Confirm press.
+        extra_knowledge = ""
+        bot_actions = await actions_svc.enabled_actions(session, bot_id) if conversation_id else []
+        if bot_actions:
+            resolved = actions_svc.resolve_plan(await llm.plan_action(message, history, summary_context, bot_actions), bot_actions)
+            if resolved:
+                action, action_params, missing = resolved
+                if missing:
+                    extra_knowledge = (
+                        f"The visitor wants to: {action.label}. To do that you still need these details from them: "
+                        + ", ".join(m["description"] or m["name"] for m in missing)
+                        + ". Ask for them politely in one short message. Never make up values."
+                    )
+                elif action.requires_confirmation:
+                    pending = await actions_svc.propose(
+                        session, bot=bot, action=action, params=action_params, conversation_id=conversation_id, visitor_id=visitor_id or ""
+                    )
+                    root_span.update(output={"action_proposed": action.name})
+                    yield {
+                        "type": "action_proposal", "pending_id": pending.id, "label": action.label,
+                        "fields": actions_svc.card_fields(action, action_params),
+                    }
+                    yield {"type": "done", "no_answer": False, "sources": [], "follow_ups": [], "products": []}
+                    return
+                else:
+                    result = await actions_svc.execute(
+                        session, bot=bot, action=action, params=action_params, conversation_id=conversation_id, confirmed=False
+                    )
+                    extra_knowledge = (
+                        f"Result of '{action.label}' for the visitor: {result['message']}" if result["ok"]
+                        else f"Trying to '{action.label}' just failed. Apologise briefly and offer to connect them with the team."
+                    )
+
         chunks = await retrieval.hybrid_search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
         # Catalogue products related to the question (SAN-1800): the model may
         # recommend them, and the widget shows them as cards under the answer.
         matched_products = await products.search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
-        if not chunks and not matched_products:
+        if not chunks and not matched_products and not extra_knowledge:
             # Low-confidence-twice handoff (SAN-1111, FR-H2) — "low
             # confidence" scoped to "retrieval found nothing at all",
             # checkable before generating anything. A second consecutive
@@ -179,6 +214,8 @@ async def answer_stream(
                 await session.commit()
 
         knowledge = "\n".join(f"[{i}] ({c.get('url') or 'source'}) {c['text']}" for i, c in enumerate(chunks, 1))
+        if extra_knowledge:
+            knowledge = (knowledge + "\n\n" if knowledge else "") + extra_knowledge
         if matched_products:
             catalogue = "\n".join(
                 f"- {p['name']}" + (f" ({p['price']})" if p["price"] else "") + (f": {p['description']}" if p["description"] else "")
