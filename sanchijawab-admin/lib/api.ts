@@ -41,6 +41,14 @@ export interface WidgetTrigger {
   variant?: "" | "A" | "B";
 }
 
+export interface ProductInput {
+  name: string; price: string; description: string; image_url: string; url: string;
+}
+
+export interface ProductRow extends ProductInput {
+  product_id: string;
+}
+
 export interface BusinessHours {
   timezone?: string;
   hours?: Record<string, [string, string][]>;
@@ -394,6 +402,33 @@ export const api = {
     request<
       { trigger_id: string; type: string; message: string; variant: string; shown: number; clicked: number; click_rate: number | null }[]
     >(`/v1/bots/${botId}/analytics/triggers`),
+
+  listProducts: (botId: string) =>
+    request<ProductRow[]>(`/v1/bots/${botId}/products`),
+
+  addProduct: (botId: string, body: ProductInput) =>
+    request<ProductRow>(`/v1/bots/${botId}/products`, { method: "POST", body: JSON.stringify(body) }),
+
+  editProduct: (productId: string, body: ProductInput) =>
+    request<ProductRow>(`/v1/products/${productId}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  deleteProduct: (productId: string) =>
+    request<{ deleted: boolean }>(`/v1/products/${productId}`, { method: "DELETE" }),
+
+  clearProducts: (botId: string) =>
+    request<{ deleted: number }>(`/v1/bots/${botId}/products`, { method: "DELETE" }),
+
+  importProducts: async (botId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const token = getToken();
+    const resp = await fetch(`${API_URL}/v1/bots/${botId}/products/import`, {
+      method: "POST", body: form, headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new ApiError(resp.status, body.detail || `Import failed (${resp.status})`);
+    return body as { imported: number; problems: string[]; problem_count: number };
+  },
 
   listApiKeys: (workspaceId: string) =>
     request<{ key_id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked: boolean }[]>(

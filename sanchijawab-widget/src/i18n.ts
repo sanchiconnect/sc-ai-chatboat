@@ -19,6 +19,7 @@ export interface WidgetStrings {
   agentLabel: string;
   source: string;
   sourceN: (n: number) => string;
+  viewProduct: string;
   connectingToTeam: string;
   emailTranscript: string;
   emailTranscriptPlaceholder: string;
@@ -51,6 +52,7 @@ const EN: WidgetStrings = {
   agentLabel: "Agent",
   source: "Source",
   sourceN: (n) => `Source ${n}`,
+  viewProduct: "View",
   connectingToTeam: "Connecting you with our team — someone will be with you shortly.",
   emailTranscript: "Email transcript",
   emailTranscriptPlaceholder: "Your email address",
@@ -86,6 +88,7 @@ const HI: WidgetStrings = {
   agentLabel: "एजेंट",
   source: "स्रोत",
   sourceN: (n) => `स्रोत ${n}`,
+  viewProduct: "देखें",
   connectingToTeam: "आपको हमारी टीम से जोड़ा जा रहा है — कोई जल्द ही आपसे संपर्क करेगा।",
   emailTranscript: "बातचीत ईमेल करें",
   emailTranscriptPlaceholder: "आपका ईमेल पता",

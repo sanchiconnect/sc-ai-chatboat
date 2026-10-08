@@ -1,3 +1,12 @@
+export interface ProductCard {
+  product_id: string;
+  name: string;
+  price: string;
+  description: string;
+  image_url: string;
+  url: string;
+}
+
 export interface ChatEvent {
   type: "delta" | "done" | "handoff" | "conversation" | "message_saved";
   text?: string;
@@ -7,6 +16,7 @@ export interface ChatEvent {
   handed_off?: boolean;
   message_id?: string;
   follow_ups?: string[];
+  products?: ProductCard[];
 }
 
 export interface ChatHistoryTurn {

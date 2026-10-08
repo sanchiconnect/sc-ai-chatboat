@@ -479,6 +479,25 @@ class TriggerEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class Product(Base):
+    """A product the bot can recommend, shown as a card in the chat. The
+    embedding (name + description) lets the bot find products related to what
+    a visitor asks, the same way chunks of the website are found."""
+
+    __tablename__ = "products"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    price_text: Mapped[str] = mapped_column(String(50), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str] = mapped_column(String(1024), default="")
+    product_url: Mapped[str] = mapped_column(String(1024), default="")
+    embedding: Mapped[list[float]] = mapped_column(Vector(settings.embed_dim))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class ApiKey(Base):
     """Workspace-level key for the read-only public API and MCP server. Only a
     SHA-256 hash is stored; the raw key is shown to the creator exactly once."""

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { watchTriggers, type Trigger } from "./triggers";
 import {
   streamChat, pollMessages, submitLead, rateMessage, emailTranscript, submitCsat, sendTriggerEvent,
-  type ChatHistoryTurn,
+  type ChatHistoryTurn, type ProductCard,
 } from "./api";
 import { renderMarkdown } from "./markdown";
 import { BotAvatar } from "./avatars";
@@ -45,6 +45,7 @@ interface Message {
   messageId?: string;
   rated?: 1 | -1;
   followUps?: string[];
+  products?: ProductCard[];
 }
 
 function downloadTranscript(botId: string, messages: Message[]) {
@@ -336,7 +337,7 @@ export function Widget(props: WidgetProps) {
           setMessages((m) => {
             const next = [...m];
             const last = next[next.length - 1];
-            next[next.length - 1] = { ...last, pending: false, sources: event.sources, followUps: event.follow_ups };
+            next[next.length - 1] = { ...last, pending: false, sources: event.sources, followUps: event.follow_ups, products: event.products };
             return next;
           });
           if (event.handed_off) setHandedOff(true);
@@ -517,6 +518,24 @@ export function Widget(props: WidgetProps) {
                     >
                       {"\u{1F44E}"}
                     </button>
+                  </div>
+                )}
+                {m.products && m.products.length > 0 && (
+                  <div class="sj-products">
+                    {m.products.map((p) => (
+                      <div class="sj-product" key={p.product_id}>
+                        {p.image_url && <img class="sj-product-img" src={p.image_url} alt={p.name} loading="lazy" />}
+                        <div class="sj-product-body">
+                          <div class="sj-product-name">{p.name}</div>
+                          {p.price && <div class="sj-product-price">{p.price}</div>}
+                          {p.url && (
+                            <a class="sj-product-link" href={p.url} target="_blank" rel="noopener noreferrer">
+                              {t.viewProduct}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {props.showSources && m.sources && m.sources.length > 0 && (

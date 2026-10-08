@@ -35,17 +35,19 @@ separate Super Admin console.
   automatic deletion, export/erase of one visitor's data, rate limits, protection against the crawler/webhooks being aimed
   at internal addresses, escaped emails, strong-secret requirement, activity log, security headers, accessibility checked
   (dashboard and widget, automated scan with no failures).
-- **Quality checks:** 74 automated tests, a load test, and a 150-question quality evaluation with a saved baseline and a
+- **Products in chat:** a product list per assistant (add by hand or import a CSV) with picture, price and link; when a visitor asks about something related the bot mentions it and shows it as a card, matched by meaning and only for clear matches.
+- **Public API and MCP server:** workspace admins create API keys; with a key, other software or an AI assistant (such as Claude) can read conversations and leads and ask an assistant questions. Keys are shown once, stored hashed, revocable, rate limited.
+- **Quality checks:** 87 automated tests, a load test, and a 150-question quality evaluation with a saved baseline and a
   weekly GitHub check.
 
 ## Honest numbers
 
 | Measure | Result |
 |---|---|
-| Automated tests | 74 pass |
+| Automated tests | 87 pass |
 | Answer groundedness (sampled, judged by AI) | 97 / 100 (target 90) |
 | Questions the bot declined on 5 real sites | 22% (43% on one clothing-brand site, 10% on the best) |
-| Time to a full answer | 11 s median, 17 s slowest-5% |
+| Time to a full answer | about 7 s median (was 11 s before turning off Gemini's hidden "thinking") |
 | Dashboard speed, one process | about 100-150 requests/second with no errors at 50 simultaneous users |
 
 The two things to improve if time allows: the answer time is slow for a chat, and sites with many pages decline more
@@ -59,7 +61,7 @@ because only 40 pages were crawled in the test.
 | WhatsApp, Instagram, Messenger channels | Need Meta business accounts and app review. |
 | CRM (HubSpot/Zoho), Shopify/WooCommerce order lookup, calendar booking, Google Drive/Notion import | Need those companies' developer accounts. A generic webhook for leads already works. |
 | Single sign-on (Google Workspace, SAML) | Needs an identity provider to test with. |
-| Public API keys / MCP server, product cards in chat, "bot takes actions" engine | Designed in the project plan, not started. |
+| "Bot takes actions" engine (booking, order changes, with visitor confirmation) | Not started; the real connectors it would call need the outside accounts above. |
 | Content-Security-Policy header | Needs the real website addresses. |
 | Multi-region / data residency | Depends on hosting. |
 | Screen-reader and keyboard-only testing | Only automated accessibility scans were run. |

@@ -42,10 +42,10 @@ from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
 )
 from .models import (
-    AuditLog, BillingProfile, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
+    AuditLog, BillingProfile, Product, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
 )
-from . import public_api
+from . import products_api, public_api
 from .services import crm, llm, privacy, retrieval, storage
 from .services.auth import (
     create_access_token,
@@ -96,6 +96,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="SanchiJawab API", lifespan=lifespan)
 app.include_router(public_api.router)  # API-key REST + MCP server (SAN-1806)
+app.include_router(products_api.router)  # product catalogue (SAN-1800)
 
 # The widget is embedded on arbitrary customer domains by design — the
 # public/w/* routes MUST be callable cross-origin from anywhere, there's no
@@ -611,6 +612,7 @@ async def delete_bot(bot_id: str, user: CurrentUser = Depends(get_current_user))
         await session.execute(delete(Conversation).where(Conversation.bot_id == bot_id))
         await session.execute(delete(QAPair).where(QAPair.bot_id == bot_id))
         await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id == bot_id))
+        await session.execute(delete(Product).where(Product.bot_id == bot_id))
         await session.execute(delete(ToolConnection).where(ToolConnection.bot_id == bot_id))
         # routing_rules has a FK to teams, so it goes first.
         await session.execute(delete(RoutingRule).where(RoutingRule.bot_id == bot_id))
@@ -3148,6 +3150,7 @@ async def staff_delete_workspace(workspace_id: str, _staff: User = Depends(get_c
             await session.execute(delete(Conversation).where(Conversation.bot_id.in_(bot_ids)))
             await session.execute(delete(QAPair).where(QAPair.bot_id.in_(bot_ids)))
             await session.execute(delete(WidgetConfig).where(WidgetConfig.bot_id.in_(bot_ids)))
+            await session.execute(delete(Product).where(Product.bot_id.in_(bot_ids)))
             await session.execute(delete(ToolConnection).where(ToolConnection.bot_id.in_(bot_ids)))
             # routing_rules has a FK to teams, so it goes first.
             await session.execute(delete(RoutingRule).where(RoutingRule.bot_id.in_(bot_ids)))

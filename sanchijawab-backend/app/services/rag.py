@@ -13,7 +13,7 @@ from langfuse import propagate_attributes
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Bot, Conversation
-from . import llm, retrieval
+from . import llm, products, retrieval
 from .tracing import get_langfuse
 
 DECLINE_MARKERS = (
@@ -145,7 +145,10 @@ async def answer_stream(
             return
 
         chunks = await retrieval.hybrid_search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
-        if not chunks:
+        # Catalogue products related to the question (SAN-1800): the model may
+        # recommend them, and the widget shows them as cards under the answer.
+        matched_products = await products.search(session, tenant_id=tenant_id, bot_id=bot_id, query=query)
+        if not chunks and not matched_products:
             # Low-confidence-twice handoff (SAN-1111, FR-H2) — "low
             # confidence" scoped to "retrieval found nothing at all",
             # checkable before generating anything. A second consecutive
@@ -176,6 +179,12 @@ async def answer_stream(
                 await session.commit()
 
         knowledge = "\n".join(f"[{i}] ({c.get('url') or 'source'}) {c['text']}" for i, c in enumerate(chunks, 1))
+        if matched_products:
+            catalogue = "\n".join(
+                f"- {p['name']}" + (f" ({p['price']})" if p["price"] else "") + (f": {p['description']}" if p["description"] else "")
+                for p in matched_products
+            )
+            knowledge += f"\n\nProducts from the catalogue (the visitor sees these as cards under your answer):\n{catalogue}"
 
         full_text = ""
         async for delta in llm.stream_answer(business_name, language, message, knowledge, persona, instructions, summary_context, model_tier):
@@ -185,12 +194,14 @@ async def answer_stream(
         declined = _is_decline(full_text)
         sources: list[dict] = []
         follow_ups: list[str] = []
+        cards: list[dict] = []
         if not declined:
             sources = pick_sources(chunks)
+            cards = [{k: v for k, v in p.items() if k != "similarity"} for p in matched_products]
             # Follow-up quick replies (SAN-1096, FR-C8) — only worth
             # suggesting more questions when this one actually got a real,
             # grounded answer; a decline has nothing to follow up on.
             follow_ups = await llm.suggest_follow_ups(message, full_text)
 
-        root_span.update(output={"text": full_text, "no_answer": declined, "sources": sources, "follow_ups": follow_ups})
-        yield {"type": "done", "no_answer": declined, "sources": sources, "follow_ups": follow_ups}
+        root_span.update(output={"text": full_text, "no_answer": declined, "sources": sources, "follow_ups": follow_ups, "products": len(cards)})
+        yield {"type": "done", "no_answer": declined, "sources": sources, "follow_ups": follow_ups, "products": cards}
