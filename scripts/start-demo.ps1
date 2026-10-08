@@ -184,6 +184,10 @@ if (-not $Check -and $problems.Count -eq 0) {
     $answer = ([regex]::Matches($chat.Content, '"text":\s*"((?:[^"\\]|\\.)*)"') | ForEach-Object { $_.Groups[1].Value }) -join ""
     if ($answer.Length -gt 0) { Ok "a real AI answer came back: `"$($answer.Substring(0, [Math]::Min(110, $answer.Length)))`"" } else { Bad "The chat endpoint answered, but with no text. Check CLOUD_API_KEY (Gemini)." }
     Invoke-RestMethod -Method Delete -Uri "http://localhost:8000/v1/bots/$($bot.bot_id)" -Headers $h | Out-Null
+    # Remove the throwaway account too, otherwise every start leaves another "Launcher check" workspace behind.
+    Push-Location $Backend
+    uv run python -m app.cleanup_test_data --apply --pattern ("^" + [regex]::Escape($email) + "$") 2>&1 | Out-Null
+    Pop-Location
   } catch {
     Bad "The end-to-end check failed: $($_.Exception.Message)"
   }
