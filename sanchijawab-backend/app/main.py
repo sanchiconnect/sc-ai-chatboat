@@ -27,6 +27,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .timeutil import utcnow
 from .config import settings
 
 # Empty dsn makes this a safe no-op (same convention as the Langfuse client
@@ -39,12 +40,15 @@ sentry_sdk.init(
 )
 from .db import SessionLocal
 from .deps import (
-    CurrentUser, get_current_staff_user, get_current_user, require_super_admin, require_workspace_role,
+    CurrentUser, get_current_staff_user, get_current_user, get_user_or_staff, require_platform_admin,
+    require_super_admin, require_workspace_role,
 )
 from .models import (
     AuditLog, BillingProfile, Product, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
     PaymentGateway, Plan, QAPair, RoutingRule, Source, Team, ToolConnection, User, Workspace, WidgetConfig,
+    WorkspaceBillingDetails,
 )
+from .services.payments.billing_validation import billing_errors, require_valid_billing
 from . import actions_api, products_api, public_api
 from .services import crm, llm, privacy, retrieval, storage
 from .services.auth import (
@@ -58,14 +62,17 @@ from .services.auth import (
 )
 from .services.chunker import chunk_text
 from .services.conversations import add_message, get_or_create_conversation, list_messages
-from .services.email import send_email, send_invite_email, send_verification_email
+from .services.email import send_email, send_invite_email, send_notice_email, send_verification_email
 from .services.embeddings import embed_texts
 from .services.parser import DOCLING_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, TABULAR_EXTENSIONS, extension_of
 from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, upsert_gateway
 from .services.payments.invoice import compute_gst_split, generate_invoice_html, render_invoice_pdf
 from .services.payments.sequence import next_invoice_number
-from .services.notifications import notify_handoff
+from .services.notifications import mark_handoff_notifications_read, notify_handoff, notify_users, workspace_user_ids
+
+_MANAGERS = ("owner", "admin")
+_RESPONDERS = ("owner", "admin", "agent")
 from .services.pii import mask_pii
 from .services.plan_limits import (
     enforce_file_limit,
@@ -265,7 +272,7 @@ async def verify_email(body: VerifyEmailRequest):
         db_user = await session.get(User, payload["sub"])
         if db_user is None:
             raise HTTPException(404, "User not found")
-        db_user.email_verified_at = datetime.utcnow()
+        db_user.email_verified_at = utcnow()
         await session.commit()
     return {"verified": True}
 
@@ -372,6 +379,22 @@ async def invite_member(
             invite_token = create_invite_token(invited.id, workspace_id, body.role)
             email_sent = await send_invite_email(body.email, invite_token, workspace.name)
 
+        # Tell the people who run the workspace; and if the invitee already
+        # has an account, tell them they were added (new users get the invite email).
+        actor = await session.get(User, user.user_id)
+        await notify_users(
+            session, tenant_id=workspace.tenant_id, workspace_id=workspace_id,
+            user_ids=await workspace_user_ids(session, workspace_id, _MANAGERS),
+            kind="team", message=f"{actor.email if actor else 'An admin'} invited {body.email} to join as {body.role}.",
+            link_path="/dashboard/team", heading="New team invitation", button_label="Open Team", email=False,
+        )
+        if not is_new_user:
+            await notify_users(
+                session, tenant_id=workspace.tenant_id, workspace_id=workspace_id, user_ids=[invited.id],
+                kind="team", message=f"You were added to {workspace.name} as {body.role}.",
+                link_path="/dashboard", heading=f"You've been added to {workspace.name}", button_label="Open dashboard",
+            )
+
         return {
             "user_id": invited.id, "role": body.role, "email_sent": email_sent,
             # Dev fallback for when SMTP_HOST isn't configured, same convention
@@ -426,6 +449,19 @@ async def update_membership(
             raise HTTPException(400, "Can't change the workspace owner's role")
         membership.role = body.role
         await session.commit()
+        workspace = await session.get(Workspace, workspace_id)
+        target = await session.get(User, target_user_id)
+        await notify_users(
+            session, tenant_id=workspace.tenant_id, workspace_id=workspace_id, user_ids=[target_user_id],
+            kind="team", message=f"Your role in {workspace.name} is now {body.role}.",
+            link_path="/dashboard/profile", heading="Your role changed", button_label="View my profile",
+        )
+        await notify_users(
+            session, tenant_id=workspace.tenant_id, workspace_id=workspace_id,
+            user_ids=[u for u in await workspace_user_ids(session, workspace_id, _MANAGERS) if u != user.user_id],
+            kind="team", message=f"{target.email if target else 'A teammate'} is now {body.role}.",
+            link_path="/dashboard/team", heading="Team role updated", button_label="Open Team", email=False,
+        )
         return {"user_id": target_user_id, "role": membership.role}
 
 
@@ -438,6 +474,22 @@ async def remove_member(workspace_id: str, target_user_id: str, user: CurrentUse
             raise HTTPException(400, "Can't remove the workspace owner")
         await session.delete(membership)
         await session.commit()
+        workspace = await session.get(Workspace, workspace_id)
+        target = await session.get(User, target_user_id)
+        await notify_users(
+            session, tenant_id=workspace.tenant_id, workspace_id=workspace_id,
+            user_ids=[u for u in await workspace_user_ids(session, workspace_id, _MANAGERS) if u != user.user_id],
+            kind="team", message=f"{target.email if target else 'A teammate'} was removed from the workspace.",
+            link_path="/dashboard/team", heading="Teammate removed", button_label="Open Team", email=False,
+        )
+        # The removed person isn't a member any more, so no membership-scoped
+        # email preference applies; they still deserve to know.
+        if target is not None and target.email and target.password_hash:
+            await send_notice_email(
+                target.email, subject=f"You were removed from {workspace.name}", heading="Your access was removed",
+                message=f"A workspace admin removed you from {workspace.name} on SanchiJawab.", button_label="Open SanchiJawab",
+                link=f"{settings.frontend_url}/login",
+            )
         return {"removed": True}
 
 
@@ -462,8 +514,16 @@ async def accept_invite(body: AcceptInviteRequest):
         db_user.password_hash = hash_password(body.password)
         from datetime import datetime
 
-        db_user.email_verified_at = datetime.utcnow()
+        db_user.email_verified_at = utcnow()
         await session.commit()
+        invited_ws = await session.get(Workspace, payload["workspace_id"])
+        if invited_ws is not None:
+            await notify_users(
+                session, tenant_id=invited_ws.tenant_id, workspace_id=invited_ws.id,
+                user_ids=await workspace_user_ids(session, invited_ws.id, _MANAGERS),
+                kind="team", message=f"{db_user.email} accepted the invitation and joined {invited_ws.name}.",
+                link_path="/dashboard/team", heading="Invitation accepted", button_label="Open Team",
+            )
         return {"access_token": create_access_token(db_user.id, db_user.tenant_id), "workspace_id": payload["workspace_id"]}
 
 
@@ -504,7 +564,7 @@ async def get_bot(bot_id: str, user: CurrentUser = Depends(get_current_user)):
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
             "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
-            "retention_days": bot.retention_days,
+            "retention_days": bot.retention_days, "web_fallback": bot.web_fallback,
         }
 
 
@@ -542,6 +602,7 @@ class UpdateBotRequest(BaseModel):
     business_hours: dict | None = None
     slack_webhook_url: str | None = None
     retention_days: int | None = None  # 0 turns automatic retention off
+    web_fallback: bool | None = None
 
 
 @app.patch("/v1/bots/{bot_id}")
@@ -574,6 +635,8 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             if body.retention_days < 0:
                 raise HTTPException(400, "retention_days must be 0 (off) or a positive number of days")
             bot.retention_days = body.retention_days or None
+        if body.web_fallback is not None:
+            bot.web_fallback = body.web_fallback
         await session.commit()
         return {
             "bot_id": bot.id, "name": bot.name, "persona": bot.persona,
@@ -582,7 +645,7 @@ async def update_bot(bot_id: str, body: UpdateBotRequest, user: CurrentUser = De
             "avatar_id": bot.avatar_id, "avatar_name": bot.avatar_name,
             "crm_webhook_url": bot.crm_webhook_url, "handoff_keywords": bot.handoff_keywords,
             "business_hours": bot.business_hours_json, "slack_webhook_url": bot.slack_webhook_url,
-            "retention_days": bot.retention_days,
+            "retention_days": bot.retention_days, "web_fallback": bot.web_fallback,
         }
 
 
@@ -805,6 +868,7 @@ async def list_notifications(
                 {
                     "notification_id": n.id, "bot_id": n.bot_id, "conversation_id": n.conversation_id,
                     "kind": n.kind, "message": n.message, "read": n.read_at is not None,
+                    "link": n.link or (f"/dashboard/bots/{n.bot_id}/inbox" if n.bot_id else "/dashboard"),
                     "created_at": n.created_at.isoformat(),
                 }
                 for n in rows
@@ -819,7 +883,7 @@ async def mark_notification_read(notification_id: str, user: CurrentUser = Depen
         if notif is None or notif.user_id != user.user_id:
             raise HTTPException(404, "Notification not found")
         if notif.read_at is None:
-            notif.read_at = datetime.utcnow()
+            notif.read_at = utcnow()
             await session.commit()
         return {"notification_id": notif.id, "read": True}
 
@@ -830,7 +894,7 @@ async def mark_all_notifications_read(user: CurrentUser = Depends(get_current_us
         await session.execute(
             update(Notification)
             .where(Notification.user_id == user.user_id, Notification.read_at.is_(None))
-            .values(read_at=datetime.utcnow())
+            .values(read_at=utcnow())
         )
         await session.commit()
         return {"marked_read": True}
@@ -1082,7 +1146,7 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
             mode=body.mode, include_patterns=body.include_patterns,
             exclude_patterns=body.exclude_patterns, max_pages=body.max_pages,
             rescan_interval_days=body.rescan_interval_days,
-            next_scan_at=datetime.utcnow() + timedelta(days=body.rescan_interval_days),
+            next_scan_at=utcnow() + timedelta(days=body.rescan_interval_days),
         )
         session.add(source)
         await session.flush()
@@ -1256,7 +1320,7 @@ async def rescan_source(source_id: str, user: CurrentUser = Depends(get_current_
         source.status = "pending"
         # Re-scanning now means the schedule restarts from now too, not from
         # whenever the last automatic run happened to land (SAN-1088).
-        source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
+        source.next_scan_at = utcnow() + timedelta(days=source.rescan_interval_days)
         job = IngestJob(tenant_id=source.tenant_id, source_id=source.id, status="queued")
         session.add(job)
         await session.commit()
@@ -1307,7 +1371,7 @@ async def update_source(source_id: str, body: UpdateSourceRequest, user: Current
         await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
         source.rescan_interval_days = body.rescan_interval_days
-        source.next_scan_at = datetime.utcnow() + timedelta(days=body.rescan_interval_days)
+        source.next_scan_at = utcnow() + timedelta(days=body.rescan_interval_days)
         await session.commit()
         return {"source_id": source.id, "rescan_interval_days": source.rescan_interval_days}
 
@@ -1504,7 +1568,7 @@ async def public_widget_config(bot_id: str, request: Request):
         # fires once a visitor actually sends a message) is what lets the
         # dashboard say "yes, we've seen the script tag load" right after
         # install, before anyone's asked it anything.
-        bot.widget_last_seen_at = datetime.utcnow()
+        bot.widget_last_seen_at = utcnow()
         bot.widget_last_seen_host = _request_hostname(request)
         await session.commit()
         config = await session.get(WidgetConfig, bot_id)
@@ -1773,6 +1837,13 @@ async def public_create_lead(bot_id: str, body: LeadRequest, request: Request, b
         session.add(lead)
         await session.commit()
 
+        await notify_users(
+            session, tenant_id=bot.tenant_id, workspace_id=bot.workspace_id, bot_id=bot.id,
+            user_ids=await workspace_user_ids(session, bot.workspace_id, _RESPONDERS),
+            kind="lead", message=f"New lead on {bot.name}: {body.name or body.email or 'a visitor'} left their details.",
+            link_path=f"/dashboard/bots/{bot.id}/leads", heading="New lead captured", button_label="View leads",
+        )
+
         if bot.crm_webhook_url:
             # Fire-and-forget: the visitor's response shouldn't wait on (or
             # fail because of) some third-party webhook being slow/down.
@@ -1939,6 +2010,8 @@ async def reply_conversation(conversation_id: str, body: ReplyRequest, user: Cur
             session, conversation_id=conversation_id, tenant_id=conv.tenant_id,
             role="agent", content=body.message,
         )
+        # Someone picked it up: it no longer "needs a human", for anyone.
+        await mark_handoff_notifications_read(session, conversation_id)
         await session.commit()
         return {"id": msg.id, "role": "agent", "content": msg.content, "created_at": msg.created_at.isoformat()}
 
@@ -1984,6 +2057,7 @@ async def close_conversation(conversation_id: str, user: CurrentUser = Depends(g
         await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
         conv.status = "closed"
+        await mark_handoff_notifications_read(session, conversation_id)
         await session.commit()
         return {"conversation_id": conv.id, "status": conv.status}
 
@@ -2025,7 +2099,7 @@ async def analytics_summary(bot_id: str, days: int = 30, user: CurrentUser = Dep
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         convs = (
             await session.execute(
                 select(Conversation).where(Conversation.bot_id == bot_id, Conversation.started_at >= cutoff)
@@ -2096,7 +2170,7 @@ async def analytics_unanswered(bot_id: str, days: int = 30, user: CurrentUser = 
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         bot_msgs = (
             await session.execute(
                 select(Message)
@@ -2170,7 +2244,7 @@ async def analytics_triggers(bot_id: str, days: int = 30, user: CurrentUser = De
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
         config = await session.get(WidgetConfig, bot_id)
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         rows = (
             await session.execute(
                 select(TriggerEvent.trigger_id, TriggerEvent.event, func.count())
@@ -2204,7 +2278,7 @@ async def analytics_crawl_success(bot_id: str, days: int = 30, user: CurrentUser
             raise HTTPException(404, "Bot not found")
         await require_workspace_role(bot.workspace_id, user, min_role="agent", session=session)
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         rows = (
             await session.execute(
                 select(IngestJob.status, func.count())
@@ -2296,7 +2370,7 @@ async def list_public_plans():
 
 
 @app.get("/v1/plans")
-async def list_plans(user: CurrentUser = Depends(get_current_user)):
+async def list_plans(_user=Depends(get_user_or_staff)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Plan).order_by(Plan.sort_order, Plan.created_at))).scalars().all()
         return [_plan_out(p) for p in rows]
@@ -2315,7 +2389,7 @@ class PlanRequest(BaseModel):
 
 
 @app.post("/v1/plans")
-async def create_plan(body: PlanRequest, _admin: User = Depends(require_super_admin)):
+async def create_plan(body: PlanRequest, _admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         plan = Plan(
             name=body.name, price_text=body.price_text, tagline=body.tagline,
@@ -2342,7 +2416,7 @@ class UpdatePlanRequest(BaseModel):
 
 
 @app.patch("/v1/plans/{plan_id}")
-async def update_plan(plan_id: str, body: UpdatePlanRequest, _admin: User = Depends(require_super_admin)):
+async def update_plan(plan_id: str, body: UpdatePlanRequest, _admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         plan = await session.get(Plan, plan_id)
         if plan is None:
@@ -2372,7 +2446,7 @@ async def update_plan(plan_id: str, body: UpdatePlanRequest, _admin: User = Depe
 
 
 @app.delete("/v1/plans/{plan_id}")
-async def delete_plan(plan_id: str, _admin: User = Depends(require_super_admin)):
+async def delete_plan(plan_id: str, _admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         plan = await session.get(Plan, plan_id)
         if plan is None:
@@ -2499,7 +2573,7 @@ GATEWAY_NAMES = {"razorpay": "Razorpay", "stripe": "Stripe"}
 
 
 @app.get("/v1/billing/gateways")
-async def list_gateways(_admin: User = Depends(require_super_admin)):
+async def list_gateways(_admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(PaymentGateway))).scalars().all()
         by_code = {r.code: r for r in rows}
@@ -2543,7 +2617,7 @@ class GatewayUpsertRequest(BaseModel):
 
 
 @app.put("/v1/billing/gateways/{code}")
-async def put_gateway(code: str, body: GatewayUpsertRequest, _admin: User = Depends(require_super_admin)):
+async def put_gateway(code: str, body: GatewayUpsertRequest, _admin: User = Depends(require_platform_admin)):
     if code not in GATEWAY_NAMES:
         raise HTTPException(404, f"Unknown gateway '{code}'")
     async with SessionLocal() as session:
@@ -2583,7 +2657,7 @@ async def _get_or_create_billing_profile(session: AsyncSession) -> BillingProfil
 
 
 @app.get("/v1/billing/profile")
-async def get_billing_profile(user: CurrentUser = Depends(get_current_user)):
+async def get_billing_profile(_admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         profile = (await session.execute(select(BillingProfile))).scalars().first()
         return _billing_profile_out(profile)
@@ -2602,7 +2676,7 @@ class BillingProfileRequest(BaseModel):
 
 
 @app.put("/v1/billing/profile")
-async def put_billing_profile(body: BillingProfileRequest, _admin: User = Depends(require_super_admin)):
+async def put_billing_profile(body: BillingProfileRequest, _admin: User = Depends(require_platform_admin)):
     async with SessionLocal() as session:
         profile = await _get_or_create_billing_profile(session)
         for field in (
@@ -2634,6 +2708,8 @@ class CreateOrderRequest(BaseModel):
     customer_state: str = ""
     customer_country: str = "India"
     customer_pincode: str = ""
+    customer_phone_country_code: str = ""
+    customer_phone: str = ""
     # Stripe Checkout needs somewhere to redirect to; unused by Razorpay
     # (its checkout is a JS modal, not a redirect).
     success_url: str = ""
@@ -2645,6 +2721,12 @@ async def create_order(workspace_id: str, body: CreateOrderRequest, user: Curren
     if body.gateway_code not in GATEWAY_NAMES:
         raise HTTPException(400, f"Unknown gateway '{body.gateway_code}'")
     await require_workspace_role(workspace_id, user, min_role="admin")
+    # No incomplete billing details ever reach a payment gateway.
+    require_valid_billing(
+        name=body.customer_name, gstin=body.customer_gstin, address=body.customer_address,
+        city=body.customer_city, state=body.customer_state, country=body.customer_country,
+        pincode=body.customer_pincode, phone_country_code=body.customer_phone_country_code, phone=body.customer_phone,
+    )
 
     async with SessionLocal() as session:
         workspace = await session.get(Workspace, workspace_id)
@@ -2664,6 +2746,7 @@ async def create_order(workspace_id: str, body: CreateOrderRequest, user: Curren
             customer_address=body.customer_address, customer_city=body.customer_city,
             customer_state=body.customer_state, customer_country=body.customer_country,
             customer_pincode=body.customer_pincode,
+            customer_phone=f"{body.customer_phone_country_code.strip()} {body.customer_phone.strip()}",
         )
         session.add(order)
         await session.flush()
@@ -2711,7 +2794,7 @@ async def confirm_order(order_id: str, user: CurrentUser = Depends(get_current_u
         order.invoice_number = await next_invoice_number(session, prefix="INV")
         order.gateway_transaction_id = transaction_id
         order.status = "paid"
-        order.paid_at = datetime.utcnow()
+        order.paid_at = utcnow()
 
         # Moves the workspace off trial onto this plan's caps (SAN-1063/1119,
         # FR-A4) — trial_ends_at is left alone as a historical record; it's
@@ -2721,7 +2804,100 @@ async def confirm_order(order_id: str, user: CurrentUser = Depends(get_current_u
             workspace.plan_id = order.plan_id
 
         await session.commit()
+        if workspace is not None:
+            plan_row = await session.get(Plan, order.plan_id) if order.plan_id else None
+            await notify_users(
+                session, tenant_id=workspace.tenant_id, workspace_id=workspace.id,
+                user_ids=await workspace_user_ids(session, workspace.id, _MANAGERS),
+                kind="payment", message=f"Payment received — {workspace.name} is now on the {plan_row.name if plan_row else 'new'} plan (invoice {order.invoice_number}).",
+                link_path="/dashboard/billing", heading="Payment successful", button_label="View invoice",
+            )
         return _order_out(order)
+
+
+class OrderOutcomeRequest(BaseModel):
+    status: str  # "cancelled" | "failed"
+
+
+@app.post("/v1/orders/{order_id}/outcome")
+async def record_order_outcome(order_id: str, body: OrderOutcomeRequest, user: CurrentUser = Depends(get_current_user)):
+    """The browser tells us the visitor closed the payment window or the
+    gateway reported a failure, so the order history shows what happened
+    instead of an order stuck at "created". Only ever moves an order that
+    is still unpaid; a paid order is never downgraded."""
+    if body.status not in {"cancelled", "failed"}:
+        raise HTTPException(422, "status must be 'cancelled' or 'failed'")
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            raise HTTPException(404, "Order not found")
+        await require_workspace_role(order.workspace_id, user, min_role="admin", session=session)
+        if order.status == "created":
+            order.status = body.status
+            await session.commit()
+            workspace = await session.get(Workspace, order.workspace_id)
+            if workspace is not None:
+                what = "was cancelled" if body.status == "cancelled" else "failed"
+                await notify_users(
+                    session, tenant_id=workspace.tenant_id, workspace_id=workspace.id,
+                    user_ids=await workspace_user_ids(session, workspace.id, _MANAGERS),
+                    kind="payment", message=f"A plan payment for {workspace.name} {what}. Nothing was charged.",
+                    link_path="/dashboard/billing", heading=f"Payment {body.status}", button_label="Try again",
+                    email=body.status == "failed",
+                )
+        return _order_out(order)
+
+
+def _billing_details_out(row: WorkspaceBillingDetails | None) -> dict:
+    if row is None:
+        return {
+            "name": "", "gstin": "", "address": "", "city": "", "state": "", "country": "India",
+            "pincode": "", "phone_country_code": "+91", "phone": "",
+        }
+    return {
+        "name": row.name, "gstin": row.gstin, "address": row.address, "city": row.city, "state": row.state,
+        "country": row.country, "pincode": row.pincode, "phone_country_code": row.phone_country_code, "phone": row.phone,
+    }
+
+
+class BillingDetailsRequest(BaseModel):
+    name: str = ""
+    gstin: str = ""
+    address: str = ""
+    city: str = ""
+    state: str = ""
+    country: str = "India"
+    pincode: str = ""
+    phone_country_code: str = ""
+    phone: str = ""
+
+
+@app.get("/v1/workspaces/{workspace_id}/billing-details")
+async def get_billing_details(workspace_id: str, user: CurrentUser = Depends(get_current_user)):
+    """The workspace's own company/GST/address details. Owners and admins only."""
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    async with SessionLocal() as session:
+        return _billing_details_out(await session.get(WorkspaceBillingDetails, workspace_id))
+
+
+@app.put("/v1/workspaces/{workspace_id}/billing-details")
+async def put_billing_details(workspace_id: str, body: BillingDetailsRequest, user: CurrentUser = Depends(get_current_user)):
+    await require_workspace_role(workspace_id, user, min_role="admin")
+    errors = billing_errors(**body.model_dump())
+    if errors:
+        raise HTTPException(422, "Please fix: " + "; ".join(errors.values()))
+    async with SessionLocal() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        row = await session.get(WorkspaceBillingDetails, workspace_id)
+        if row is None:
+            row = WorkspaceBillingDetails(workspace_id=workspace_id, tenant_id=workspace.tenant_id)
+            session.add(row)
+        for field, value in body.model_dump().items():
+            setattr(row, field, value.strip().upper() if field == "gstin" else value.strip())
+        await session.commit()
+        return _billing_details_out(row)
 
 
 @app.get("/v1/workspaces/{workspace_id}/usage")
@@ -2820,17 +2996,52 @@ async def staff_put_setting(key: str, body: StaffSettingRequest, staff: User = D
 
 
 @app.get("/v1/staff/audit-log")
-async def staff_audit_log(limit: int = 100, _staff: User = Depends(get_current_staff_user)):
+async def staff_audit_log(limit: int = 100, offset: int = 0, _staff: User = Depends(get_current_staff_user)):
+    """Newest first. `offset` pages further back ("Load more")."""
     limit = max(1, min(limit, 500))
+    offset = max(0, offset)
     async with SessionLocal() as session:
         rows = (
-            await session.execute(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit))
+            await session.execute(
+                select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id).limit(limit).offset(offset)
+            )
         ).scalars().all()
         return [
             {"id": r.id, "actor_email": r.actor_email, "method": r.method, "path": r.path,
              "status_code": r.status_code, "ip": r.ip, "created_at": r.created_at.isoformat()}
             for r in rows
         ]
+
+
+def _csv_cell(value: object) -> str:
+    """One CSV cell. A leading = + - @ would be run as a formula by Excel, so
+    it is neutralised with a quote; values stored here come from request paths
+    and emails, which a user could shape."""
+    text_value = "" if value is None else str(value)
+    if text_value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        text_value = "'" + text_value
+    return '"' + text_value.replace('"', '""') + '"'
+
+
+@app.get("/v1/staff/audit-log/export")
+async def staff_audit_log_export(days: int = 30, _staff: User = Depends(get_current_staff_user)):
+    """The whole activity log for the last `days` days (default 30, max 365,
+    capped at 50,000 rows) as a CSV download."""
+    days = max(1, min(days, 365))
+    since = utcnow() - timedelta(days=days)
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(AuditLog).where(AuditLog.created_at >= since).order_by(AuditLog.created_at.desc()).limit(50_000)
+            )
+        ).scalars().all()
+    lines = ["When (UTC),Who,Method,Path,Status,IP"]
+    for r in rows:
+        lines.append(",".join(_csv_cell(v) for v in (r.created_at.isoformat(), r.actor_email, r.method, r.path, r.status_code, r.ip)))
+    return Response(
+        content="\n".join(lines) + "\n", media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="activity-log-last-{days}-days.csv"'},
+    )
 
 
 @app.get("/v1/staff/me")
@@ -2858,7 +3069,7 @@ async def staff_overview(_staff: User = Depends(get_current_staff_user)):
     async with SessionLocal() as session:
         workspace_count = (await session.execute(select(func.count()).select_from(Workspace))).scalar_one()
         bot_count = (await session.execute(select(func.count()).select_from(Bot))).scalar_one()
-        since = datetime.utcnow() - timedelta(days=30)
+        since = utcnow() - timedelta(days=30)
         conversations_30d = (
             await session.execute(
                 select(func.count()).select_from(Conversation).where(Conversation.started_at >= since)
@@ -2933,7 +3144,7 @@ async def staff_get_workspace(workspace_id: str, _staff: User = Depends(get_curr
             })
 
         bots = (await session.execute(select(Bot).where(Bot.workspace_id == workspace_id))).scalars().all()
-        since = datetime.utcnow() - timedelta(days=30)
+        since = utcnow() - timedelta(days=30)
         bot_out = []
         for bot in bots:
             conversations_30d = (

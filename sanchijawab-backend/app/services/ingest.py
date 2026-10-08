@@ -15,6 +15,7 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..timeutil import utcnow
 from ..models import Chunk, Document, IngestJob, Source
 from . import storage
 from .chunker import chunk_text
@@ -41,12 +42,12 @@ async def store_document(
         # stale content from before the disable.
         doc.content_hash = content_hash
         doc.raw_text = joined
-        doc.last_crawled_at = datetime.utcnow()
+        doc.last_crawled_at = utcnow()
         stats["skipped"] += 1
         return
 
     if doc and doc.content_hash == content_hash:
-        doc.last_crawled_at = datetime.utcnow()
+        doc.last_crawled_at = utcnow()
         stats["skipped"] += 1
         return  # unchanged since last ingest — don't re-embed
 
@@ -60,7 +61,7 @@ async def store_document(
     doc.content_hash = content_hash
     doc.raw_text = joined
     doc.status = "indexed"
-    doc.last_crawled_at = datetime.utcnow()
+    doc.last_crawled_at = utcnow()
 
     if not pieces:
         doc.status = "failed"

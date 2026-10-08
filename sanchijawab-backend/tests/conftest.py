@@ -41,6 +41,20 @@ def _rate_limit_off(monkeypatch):
     ratelimit.reset()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_web_search(monkeypatch):
+    """The online fallback calls Google Search through Gemini. Tests must never do that by accident
+    (it costs quota and makes results depend on the internet); the tests of the fallback itself
+    install their own fake."""
+    from app.services import llm
+
+    async def _nothing(*args, **kwargs):
+        return
+        yield  # makes this an (empty) async generator
+
+    monkeypatch.setattr(llm, "stream_web_answer", _nothing)
+
+
 @pytest_asyncio.fixture
 async def client():
     transport = ASGITransport(app=app)

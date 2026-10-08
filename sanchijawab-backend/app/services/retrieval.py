@@ -6,6 +6,8 @@ just filtered by tenant_id/bot_id/visibility instead of `site`.
 """
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,13 +48,18 @@ async def hybrid_search(
     bot_id: str,
     query: str,
     visibility: str = "customer",
-    top_k: int = 6,
+    top_k: int = 8,
+    rerank: bool = True,
 ) -> list[dict]:
     with get_langfuse().start_as_current_observation(
         as_type="retriever", name="hybrid-search", input=query,
     ) as span:
-        rerank_enabled = bool(settings.cohere_api_key)
-        query_vector = embed_one(query)
+        # `rerank=False` is for the extra "same question without the company name" search: it needs no
+        # paid reranker call of its own (Cohere trial keys allow only 10 calls a minute).
+        rerank_enabled = bool(settings.cohere_api_key) and rerank
+        # embed_one is CPU-bound and synchronous; run it in a thread so it
+        # doesn't freeze every other visitor's stream while it computes.
+        query_vector = await asyncio.to_thread(embed_one, query)
 
         vector_score = (1 - Chunk.embedding.cosine_distance(query_vector)).label("vector_score")
         text_score = func.ts_rank_cd(Chunk.tsv, func.plainto_tsquery("english", query)).label("text_score")
@@ -72,10 +79,15 @@ async def hybrid_search(
             .limit(settings.rerank_candidates if rerank_enabled else top_k)
         )
         rows = (await session.execute(stmt)).all()
-        results = [
-            {"chunk_id": chunk_id, "text": text, "url": url, "vector_score": vscore, "text_score": tscore}
-            for chunk_id, text, url, vscore, tscore in rows
-        ]
+        # The same passage often exists on several pages (menus, footers, repeated blocks). Keep the
+        # best-ranked copy only, so duplicates don't use up the few slots the model gets to read.
+        results = []
+        seen_texts: set[str] = set()
+        for chunk_id, text, url, vscore, tscore in rows:
+            if text in seen_texts:
+                continue
+            seen_texts.add(text)
+            results.append({"chunk_id": chunk_id, "text": text, "url": url, "vector_score": vscore, "text_score": tscore})
         reranked = False
         if rerank_enabled and len(results) > top_k:
             results, reranked = await _rerank(query, results, top_k)

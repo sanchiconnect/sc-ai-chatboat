@@ -26,6 +26,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
+from ..timeutil import utcnow
 from ..config import settings
 from ..db import SessionLocal
 from ..models import Bot, Chunk, IngestJob, Source, Workspace
@@ -74,6 +75,9 @@ async def get_or_create_bot(session, site: str, recrawl: bool) -> Bot:
         bot = Bot(tenant_id=ws.tenant_id, workspace_id=ws.id, name=name)
         session.add(bot)
         await session.flush()
+    # The eval measures answers grounded in the crawled site. A web-search answer would be judged against
+    # passages it never used, so the online fallback is always off for these bots.
+    bot.web_fallback = False
     await session.commit()
 
     chunk_count = (await session.execute(select(func.count()).select_from(Chunk).where(Chunk.bot_id == bot.id))).scalar_one()
@@ -199,12 +203,12 @@ async def main(args: argparse.Namespace) -> int:
 
     summary = summarise(rows)
     LAST_RUN_PATH.write_text(
-        json.dumps({"run_at": datetime.utcnow().isoformat(), "summary": summary, "rows": rows}, indent=1), encoding="utf-8"
+        json.dumps({"run_at": utcnow().isoformat(), "summary": summary, "rows": rows}, indent=1), encoding="utf-8"
     )
     print("\n" + json.dumps(summary, indent=1))
 
     if args.save_baseline:
-        BASELINE_PATH.write_text(json.dumps({"saved_at": datetime.utcnow().isoformat(), **summary}, indent=1), encoding="utf-8")
+        BASELINE_PATH.write_text(json.dumps({"saved_at": utcnow().isoformat(), **summary}, indent=1), encoding="utf-8")
         print(f"\nBaseline saved to {BASELINE_PATH}")
         return 0
     if not BASELINE_PATH.exists():

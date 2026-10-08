@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import (
     ActionLog, ApiKey, Bot, BotAction, Chunk, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order, Product,
-    PendingAction, QAPair, RoutingRule, Source, Team, ToolConnection, User, WidgetConfig, Workspace,
+    PendingAction, QAPair, RoutingRule, Source, Team, ToolConnection, User, WidgetConfig, Workspace, WorkspaceBillingDetails,
 )
 
 
@@ -52,6 +52,9 @@ async def delete_workspace(session: AsyncSession, workspace_id: str, *, also_sup
         # routing_rules has a FK to teams, so it goes first.
         await session.execute(delete(RoutingRule).where(RoutingRule.bot_id.in_(bot_ids)))
         await session.execute(delete(Team).where(Team.bot_id.in_(bot_ids)))
+    # Team/payment/lead notifications aren't tied to a conversation, so they go by workspace.
+    await session.execute(delete(Notification).where(Notification.workspace_id == workspace_id))
+    await session.execute(delete(WorkspaceBillingDetails).where(WorkspaceBillingDetails.workspace_id == workspace_id))
     await session.execute(delete(Bot).where(Bot.workspace_id == workspace_id))
     await session.execute(delete(Order).where(Order.workspace_id == workspace_id))
     await session.execute(delete(ApiKey).where(ApiKey.workspace_id == workspace_id))

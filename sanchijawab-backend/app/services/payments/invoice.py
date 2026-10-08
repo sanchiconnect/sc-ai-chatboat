@@ -9,6 +9,8 @@ result on the order at confirm-time, not left to the client.
 """
 from __future__ import annotations
 
+from html import escape as _esc
+
 from playwright.async_api import async_playwright
 
 GST_RATE_PERCENT = 18.0  # standard GST rate for SaaS/services in India
@@ -101,11 +103,12 @@ def generate_invoice_html(
         {'' if is_proforma else f'Transaction ID: {order.gateway_transaction_id}<br>'}
         <br>
         <span class="muted">Billed to</span><br>
-        <strong>{order.customer_name}</strong><br>
-        {order.customer_address}<br>
-        {order.customer_city}, {order.customer_state} {order.customer_pincode}<br>
-        {order.customer_country}<br>
-        GSTIN: {order.customer_gstin or '—'}
+        <strong>{_esc(order.customer_name)}</strong><br>
+        {_esc(order.customer_address)}<br>
+        {_esc(order.customer_city)}, {_esc(order.customer_state)} {_esc(order.customer_pincode)}<br>
+        {_esc(order.customer_country)}<br>
+        Phone: {_esc(order.customer_phone) or '—'}<br>
+        GSTIN: {_esc(order.customer_gstin) or '—'}
       </td>
     </tr>
   </table>

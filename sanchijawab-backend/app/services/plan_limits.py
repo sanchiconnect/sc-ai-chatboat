@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..timeutil import utcnow
 from .platform_settings import get_setting
 from ..models import Bot, Conversation, Document, Membership, Message, Plan, Source, Workspace
 
@@ -27,7 +28,7 @@ from ..models import Bot, Conversation, Document, Membership, Message, Plan, Sou
 async def start_trial(workspace: Workspace) -> None:
     """Called once, at signup."""
     days = int(await get_setting("trial_days"))
-    workspace.trial_ends_at = datetime.utcnow() + timedelta(days=days)
+    workspace.trial_ends_at = utcnow() + timedelta(days=days)
 
 
 async def _get_plan(session: AsyncSession, workspace: Workspace) -> Plan | None:
@@ -40,7 +41,7 @@ async def enforce_trial_or_plan(session: AsyncSession, workspace: Workspace) -> 
     regardless of trial_ends_at."""
     if workspace.plan_id is not None:
         return
-    if workspace.trial_ends_at and workspace.trial_ends_at < datetime.utcnow():
+    if workspace.trial_ends_at and workspace.trial_ends_at < utcnow():
         raise HTTPException(402, "Your free trial has ended — upgrade to a paid plan to continue.")
 
 
@@ -48,7 +49,7 @@ async def enforce_message_limit(session: AsyncSession, workspace: Workspace) -> 
     plan = await _get_plan(session, workspace)
     if plan is None or plan.max_messages_per_month is None:
         return
-    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     count = (
         await session.execute(
             select(func.count())
@@ -113,7 +114,7 @@ async def enforce_seat_limit(session: AsyncSession, workspace: Workspace) -> Non
 async def get_usage_summary(session: AsyncSession, workspace: Workspace) -> dict:
     """Powers the dashboard's usage-vs-cap display."""
     plan = await _get_plan(session, workspace)
-    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     messages_used = (
         await session.execute(

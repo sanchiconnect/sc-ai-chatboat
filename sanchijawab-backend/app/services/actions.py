@@ -20,6 +20,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..timeutil import utcnow
 from ..models import ActionLog, Bot, BotAction, PendingAction
 from .crypto import decrypt_secret
 from .urlsafety import UnsafeURLError, assert_public_url
@@ -104,7 +105,7 @@ def resolve_plan(plan: dict, actions: list[BotAction]) -> tuple[BotAction, dict[
 async def propose(session: AsyncSession, *, bot: Bot, action: BotAction, params: dict, conversation_id: str, visitor_id: str) -> PendingAction:
     pending = PendingAction(
         tenant_id=bot.tenant_id, bot_id=bot.id, action_id=action.id, conversation_id=conversation_id,
-        visitor_id=(visitor_id or "")[:64], params_json=params, expires_at=datetime.utcnow() + timedelta(minutes=PENDING_MINUTES),
+        visitor_id=(visitor_id or "")[:64], params_json=params, expires_at=utcnow() + timedelta(minutes=PENDING_MINUTES),
     )
     session.add(pending)
     await session.commit()
@@ -175,7 +176,7 @@ async def claim_pending(session: AsyncSession, *, pending_id: str, bot_id: str, 
     Confirm twice (or racing two tabs) runs it once."""
     conditions = [
         PendingAction.id == pending_id, PendingAction.bot_id == bot_id, PendingAction.conversation_id == conversation_id,
-        PendingAction.status == "pending", PendingAction.expires_at > datetime.utcnow(),
+        PendingAction.status == "pending", PendingAction.expires_at > utcnow(),
     ]
     if visitor_id:  # a proposal made for one visitor can't be confirmed by another
         conditions.append(PendingAction.visitor_id.in_([visitor_id, ""]))

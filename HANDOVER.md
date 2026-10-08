@@ -38,6 +38,8 @@ separate Super Admin console.
 - **Products in chat:** a product list per assistant (add by hand or import a CSV) with picture, price and link; when a visitor asks about something related the bot mentions it and shows it as a card, matched by meaning and only for clear matches.
 - **Public API and MCP server:** workspace admins create API keys; with a key, other software or an AI assistant (such as Claude) can read conversations and leads and ask an assistant questions. Keys are shown once, stored hashed, revocable, rate limited.
 - **Actions the assistant can take:** a business defines an action (for example "Book a demo": a name, the details to collect, and the address of its own server). When a visitor asks for it, the assistant collects the details, shows a card, and calls the business's server only after the visitor presses Confirm (read-only look-ups can skip the confirmation). Calls are signed so the business can verify them, go to public addresses only, and are logged in the dashboard.
+- **Answers: own information first, web second.** The assistant always searches the customer's website, files and Q&A first. Only if none of it answers does it search Google (a per-bot switch in Bot settings, on by default), and the reply says plainly that it came from the web. Passages are cleaned of link clutter and cut to fit the search model's 512-token window (`app/services/chunker.py`); `python -m app.reindex --apply` rebuilds data indexed before that fix.
+- **Team, billing details and notifications:** owners/admins manage the team and the workspace's own billing details (country/state/city dropdowns, mobile with country code, required-field checks before any payment); plans, gateway keys and the platform's GST details are edited only in the Super Admin console. Team, lead and payment events create in-app (and email) notifications, and the screens refresh by themselves.
 - **Operations tools:** `scripts\backup-db.ps1` and `restore-db.ps1 -Drill` (a restore drill passed on the real database), and `python -m app.preflight`, which reads the real settings and lists in plain words what to fix before launch.
 - **Quality checks:** 87 automated tests, a load test, and a 150-question quality evaluation with a saved baseline and a
   weekly GitHub check.
@@ -46,10 +48,10 @@ separate Super Admin console.
 
 | Measure | Result |
 |---|---|
-| Automated tests | 123 pass (plus 13 checks on the WordPress plugin) |
-| Answer groundedness (sampled, judged by AI) | 97 / 100 (target 90) |
-| Questions the bot declined on 5 real sites | 22% (43% on one clothing-brand site, 10% on the best) |
-| Time to a full answer | about 7 s median (was 11 s before turning off Gemini's hidden "thinking") |
+| Automated tests | 138 pass (plus 13 checks on the WordPress plugin) |
+| Answer groundedness (sampled, judged by AI) | 96 / 100 (target 90), 150-question run on 2026-10-08 |
+| Questions the bot declined on 5 real sites | 16.7% (was 22%): 33% Urban Company, 30% Chumbak, 13% JECRC, 7% Motherhood India, 0% SanchiConnect |
+| Time to a full answer | about 6 s median, 7.5 s slowest 5% (was 11 s median before the speed work) |
 | Dashboard speed, one process | about 100-150 requests/second with no errors at 50 simultaneous users |
 
 The two things to improve if time allows: the answer time is slow for a chat, and sites with many pages decline more
@@ -67,6 +69,9 @@ because only 40 pages were crawled in the test.
 | Enforced Content-Security-Policy | Written and sent in report-only mode; switch to enforcing (`CSP_ENFORCE=true`) after a click-through on the real site. |
 | Multi-region / data residency | Depends on hosting. |
 | Screen-reader and keyboard-only testing | Only automated accessibility scans were run. |
+| Payment webhooks | If a customer pays and closes the browser before it confirms, the order stays "not completed" until they return. Needs live gateway accounts to build and test. |
+| Re-ranking at full speed | The Cohere key in use is a Trial key (10 calls a minute); above that, re-ranking silently falls back to plain ranking. Use a paid key for launch. |
+| Older bots' pages | "Verify Bot" and "Demo Assistant" were indexed before page text was stored; re-crawl or re-upload them to get the cleaned, correctly sized passages. |
 
 ## What must be provided before launch
 

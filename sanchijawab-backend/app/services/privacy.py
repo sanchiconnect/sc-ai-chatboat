@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..timeutil import utcnow
 from ..models import Conversation, Lead, Message, Notification
 
 
@@ -60,7 +61,7 @@ async def erase_visitor(session: AsyncSession, *, bot_id: str, visitor_id: str) 
 
 
 async def purge_older_than(session: AsyncSession, *, bot_id: str, days: int) -> int:
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow() - timedelta(days=days)
     ids = (
         await session.execute(
             select(Conversation.id).where(Conversation.bot_id == bot_id, Conversation.started_at < cutoff)

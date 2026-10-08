@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .timeutil import utcnow
 from .config import settings
 
 
@@ -46,7 +47,7 @@ class Workspace(Base):
     # it, and every one of its bots' public widgets), regardless of whether
     # any individual member account is otherwise fine.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     # FR-A4 (SAN-1063/1119) — set once at signup, never moved. A workspace is
     # "on trial" exactly when plan_id is still null and trial_ends_at hasn't
     # passed; once a paid order is confirmed, plan_id is set and trial_ends_at
@@ -71,7 +72,7 @@ class User(Base):
     # workspace). Enforced in deps.get_current_user, not just at login, so
     # an already-issued token stops working immediately on deactivation.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Membership(Base):
@@ -85,7 +86,7 @@ class Membership(Base):
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.id"), index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     role: Mapped[str] = mapped_column(String(16), default="owner")  # owner|admin|agent|viewer
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     # Per-member opt-out of handoff emails (SAN-1113, FR-H4) — in-app
     # notifications always record regardless, since the member controls
     # when they're seen (unread badge) rather than being pushed anything.
@@ -122,6 +123,9 @@ class Bot(Base):
     # Automatic conversation retention (SAN-1127) — the worker deletes
     # conversations older than this many days. NULL means keep forever.
     retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # When the knowledge base (website, files, Q&A) can't answer, let the assistant look it up
+    # online with Google Search, clearly labelled as coming from the web. Owners can switch it off.
+    web_fallback: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Comma/newline-separated phrases (case-insensitive substring match) —
     # deterministic escalation for things a business always wants a human
     # on, regardless of how the LLM's own ask-for-human detection reads the
@@ -145,7 +149,7 @@ class Bot(Base):
     # works."
     widget_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     widget_last_seen_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="bots")
 
@@ -169,7 +173,7 @@ class Source(Base):
     next_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     stats_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Document(Base):
@@ -214,7 +218,7 @@ class Chunk(Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0)
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embed_dim))
     tsv: Mapped[str] = mapped_column(TSVECTOR, Computed("to_tsvector('english', text)", persisted=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Team(Base):
@@ -230,7 +234,7 @@ class Team(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class RoutingRule(Base):
@@ -250,7 +254,7 @@ class RoutingRule(Base):
     page_pattern: Mapped[str] = mapped_column(String(1024), default="")  # substring match against Conversation.page_url
     language: Mapped[str] = mapped_column(String(16), default="")  # exact match against Conversation.language
     priority: Mapped[int] = mapped_column(Integer, default=0)  # lower evaluates first
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class QAPair(Base):
@@ -261,7 +265,7 @@ class QAPair(Base):
     bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
     question: Mapped[str] = mapped_column(String(1024))
     answer: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Conversation(Base):
@@ -276,7 +280,7 @@ class Conversation(Base):
     page_url: Mapped[str] = mapped_column(String(1024), default="")
     language: Mapped[str] = mapped_column(String(16), default="en")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     # Handoff trigger (SAN-1111, FR-H2) — counts consecutive turns in a row
     # where retrieval found nothing at all (not "declined after generating
     # an answer", just "no chunks to even try with"); reset to 0 the
@@ -310,7 +314,7 @@ class Message(Base):
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0.0)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # thumbs: 1 | -1
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Notification(Base):
@@ -325,12 +329,15 @@ class Notification(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.id"), index=True)
-    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bots.id"), index=True)
-    conversation_id: Mapped[str] = mapped_column(String(36), ForeignKey("conversations.id"), index=True)
+    # Handoffs point at a bot + conversation; team/payment/lead events don't
+    # have either, so both are optional and `link` says where a click goes.
+    bot_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("bots.id"), index=True, nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("conversations.id"), index=True, nullable=True)
     kind: Mapped[str] = mapped_column(String(32), default="handoff")
     message: Mapped[str] = mapped_column(String(512))
+    link: Mapped[str] = mapped_column(String(255), default="")
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class WidgetConfig(Base):
@@ -371,7 +378,7 @@ class ToolConnection(Base):
     encrypted_credentials: Mapped[str] = mapped_column(Text, default="")
     enabled_tools_json: Mapped[list] = mapped_column(JSON, default=list)
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Lead(Base):
@@ -384,7 +391,7 @@ class Lead(Base):
     email: Mapped[str] = mapped_column(String(255), default="")
     phone: Mapped[str] = mapped_column(String(64), default="")
     pushed_to_crm: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Plan(Base):
@@ -416,8 +423,8 @@ class Plan(Base):
     max_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_files: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_seats: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class ContentPage(Base):
@@ -442,8 +449,8 @@ class ContentPage(Base):
     # Display date: a blog post's publish date, a legal page's "last updated".
     display_date: Mapped[str] = mapped_column(String(10), default="")
     updated_by: Mapped[str] = mapped_column(String(255), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class AuditLog(Base):
@@ -460,7 +467,7 @@ class AuditLog(Base):
     path: Mapped[str] = mapped_column(String(512))
     status_code: Mapped[int] = mapped_column(Integer)
     ip: Mapped[str] = mapped_column(String(64), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class TriggerEvent(Base):
@@ -476,7 +483,7 @@ class TriggerEvent(Base):
     variant: Mapped[str] = mapped_column(String(4), default="")
     event: Mapped[str] = mapped_column(String(8))  # shown | clicked
     visitor_id: Mapped[str] = mapped_column(String(64), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class Product(Base):
@@ -495,7 +502,7 @@ class Product(Base):
     image_url: Mapped[str] = mapped_column(String(1024), default="")
     product_url: Mapped[str] = mapped_column(String(1024), default="")
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embed_dim))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class BotAction(Base):
@@ -517,7 +524,7 @@ class BotAction(Base):
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     secret_enc: Mapped[str] = mapped_column(Text, default="")  # Fernet-encrypted signing secret
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class PendingAction(Base):
@@ -534,7 +541,7 @@ class PendingAction(Base):
     visitor_id: Mapped[str] = mapped_column(String(64), default="")
     params_json: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(12), default="pending")  # pending|confirmed|cancelled|expired
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
 
 
@@ -553,7 +560,7 @@ class ActionLog(Base):
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(String(300), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class ApiKey(Base):
@@ -569,7 +576,7 @@ class ApiKey(Base):
     key_prefix: Mapped[str] = mapped_column(String(16))  # first characters, so a key can be recognised in the list
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_by: Mapped[str] = mapped_column(String(255), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -583,7 +590,7 @@ class PlatformSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="")
     updated_by: Mapped[str] = mapped_column(String(255), default="")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class PaymentGateway(Base):
@@ -605,8 +612,8 @@ class PaymentGateway(Base):
     live_client_secret_enc: Mapped[str] = mapped_column(Text, default="")
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class BillingProfile(Base):
@@ -627,7 +634,28 @@ class BillingProfile(Base):
     supplier_pincode: Mapped[str] = mapped_column(String(16), default="")
     supplier_email: Mapped[str] = mapped_column(String(255), default="")
     supplier_phone: Mapped[str] = mapped_column(String(32), default="")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class WorkspaceBillingDetails(Base):
+    """A customer workspace's own billing details (company, GSTIN, address,
+    phone) — what goes on its invoices and pre-fills checkout. One row per
+    workspace; only owners/admins can read or change it."""
+
+    __tablename__ = "workspace_billing_details"
+
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    gstin: Mapped[str] = mapped_column(String(32), default="")
+    address: Mapped[str] = mapped_column(String(512), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    state: Mapped[str] = mapped_column(String(100), default="")
+    country: Mapped[str] = mapped_column(String(100), default="India")
+    pincode: Mapped[str] = mapped_column(String(16), default="")
+    phone_country_code: Mapped[str] = mapped_column(String(8), default="+91")
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class PaymentOrderSequence(Base):
@@ -664,7 +692,7 @@ class Order(Base):
     payment_mode: Mapped[str] = mapped_column(String(16), default="test")  # test | live
     amount: Mapped[float] = mapped_column(Float)
     currency: Mapped[str] = mapped_column(String(8), default="INR")
-    status: Mapped[str] = mapped_column(String(16), default="created", index=True)  # created|paid|failed
+    status: Mapped[str] = mapped_column(String(16), default="created", index=True)  # created|paid|failed|cancelled
 
     gateway_order_id: Mapped[str] = mapped_column(String(255), default="")
     gateway_transaction_id: Mapped[str] = mapped_column(String(255), default="")
@@ -676,6 +704,7 @@ class Order(Base):
     customer_state: Mapped[str] = mapped_column(String(100), default="")
     customer_country: Mapped[str] = mapped_column(String(100), default="India")
     customer_pincode: Mapped[str] = mapped_column(String(16), default="")
+    customer_phone: Mapped[str] = mapped_column(String(40), default="")  # "+91 9876543210"
 
     # Computed at confirm-time from supplier_state vs customer_state (real
     # comparison — see services/payments/invoice.py) — not trusted from the
@@ -685,7 +714,7 @@ class Order(Base):
 
     invoice_number: Mapped[str] = mapped_column(String(64), default="")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -699,7 +728,7 @@ class IngestJob(Base):
     source_id: Mapped[str] = mapped_column(String(36), ForeignKey("sources.id"), index=True)
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|done|failed
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Live crawl progress (SAN-1087, FR-K8) — pages_total is an exact count
     # for sitemap mode (the URL list is known upfront) or the max_pages

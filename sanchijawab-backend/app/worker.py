@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select, text
 
+from .timeutil import utcnow
 from .db import SessionLocal
 
 # crawl4ai logs progress with unicode characters (arrows, checkmarks) via
@@ -64,7 +65,7 @@ async def process_job(job: IngestJob) -> None:
                 # on a real completed run, so a stopped or failed crawl gets
                 # retried on the next schedule check instead of silently
                 # going quiet for a full interval.
-                source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
+                source.next_scan_at = utcnow() + timedelta(days=source.rescan_interval_days)
             print(f"job {job.id}: {stats}")
         except CrawlCancelled as e:
             job.status = "cancelled"
@@ -93,7 +94,7 @@ async def enqueue_due_rescans() -> None:
                 select(Source).where(
                     Source.type == "website",
                     Source.next_scan_at.is_not(None),
-                    Source.next_scan_at <= datetime.utcnow(),
+                    Source.next_scan_at <= utcnow(),
                 )
             )
         ).scalars().all()
@@ -108,7 +109,7 @@ async def enqueue_due_rescans() -> None:
             if in_flight:
                 continue
             session.add(IngestJob(tenant_id=source.tenant_id, source_id=source.id, status="queued"))
-            source.next_scan_at = datetime.utcnow() + timedelta(days=source.rescan_interval_days)
+            source.next_scan_at = utcnow() + timedelta(days=source.rescan_interval_days)
         if due:
             await session.commit()
 
@@ -131,15 +132,15 @@ async def run_forever() -> None:
     last_schedule_check = datetime.min
     last_retention_check = datetime.min
     while True:
-        if (datetime.utcnow() - last_retention_check).total_seconds() >= RETENTION_CHECK_SECONDS:
+        if (utcnow() - last_retention_check).total_seconds() >= RETENTION_CHECK_SECONDS:
             purged = await purge_expired_conversations()
             if purged:
                 print(f"retention: deleted {purged} expired conversations")
-            last_retention_check = datetime.utcnow()
+            last_retention_check = utcnow()
 
-        if (datetime.utcnow() - last_schedule_check).total_seconds() >= SCHEDULE_CHECK_SECONDS:
+        if (utcnow() - last_schedule_check).total_seconds() >= SCHEDULE_CHECK_SECONDS:
             await enqueue_due_rescans()
-            last_schedule_check = datetime.utcnow()
+            last_schedule_check = utcnow()
 
         async with SessionLocal() as session:
             job = await claim_one_job(session)

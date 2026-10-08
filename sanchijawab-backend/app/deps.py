@@ -85,6 +85,27 @@ async def require_super_admin(user: CurrentUser = Depends(get_current_user)) -> 
     return db_user
 
 
+async def require_platform_admin(authorization: str = Header(default="")) -> User:
+    """Platform-wide settings (pricing plans, payment gateways, GST details).
+    Accepts the Super Admin console's staff token, or a customer token that
+    belongs to a super admin (kept so existing API clients keep working).
+    Everyone else gets 401/403."""
+    try:
+        return await get_current_staff_user(authorization)
+    except HTTPException:
+        user = await get_current_user(authorization)
+        return await require_super_admin(user)
+
+
+async def get_user_or_staff(authorization: str = Header(default="")):
+    """Read-only routes both the customer dashboard and the Super Admin
+    console need (e.g. the plan list): either kind of session is fine."""
+    try:
+        return await get_current_user(authorization)
+    except HTTPException:
+        return await get_current_staff_user(authorization)
+
+
 async def get_current_staff_user(authorization: str = Header(default="")) -> User:
     """Gate for the staff/super-admin dashboard routes. Requires a token
     minted by POST /v1/staff/login (type=staff_access), not an ordinary

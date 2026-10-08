@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .timeutil import utcnow
 from .db import SessionLocal
 from .deps import CurrentUser, get_current_user, require_workspace_role
 from .models import ApiKey, Bot, Conversation, Lead, Workspace
@@ -99,7 +100,7 @@ async def revoke_api_key(workspace_id: str, key_id: str, user: CurrentUser = Dep
         key = await session.get(ApiKey, key_id)
         if key is None or key.workspace_id != workspace_id:
             raise HTTPException(404, "Key not found")
-        key.revoked_at = key.revoked_at or datetime.utcnow()
+        key.revoked_at = key.revoked_at or utcnow()
         await session.commit()
         return {"revoked": True}
 
@@ -121,8 +122,8 @@ async def api_key_workspace(authorization: str = Header(default="")) -> tuple[st
         if workspace is None or not workspace.is_active:
             raise HTTPException(403, "This workspace has been deactivated")
         # Updated at most once a minute so a busy key doesn't write on every call.
-        if key.last_used_at is None or datetime.utcnow() - key.last_used_at > timedelta(minutes=1):
-            key.last_used_at = datetime.utcnow()
+        if key.last_used_at is None or utcnow() - key.last_used_at > timedelta(minutes=1):
+            key.last_used_at = utcnow()
             await session.commit()
         ident = (key.workspace_id, key.tenant_id, key.id)
     ratelimit.check(f"apikey:{ident[2]}", limit=PER_KEY_LIMIT, window_seconds=60)
