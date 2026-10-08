@@ -134,6 +134,25 @@ async def enqueue_due_rescans() -> None:
             await session.commit()
 
 
+async def close_stuck_jobs() -> int:
+    """A job still "running" long after the time limit belongs to a worker that died (power cut, kill,
+    restart mid-crawl). Left alone it shows a frozen progress badge forever; close it out as failed. The
+    pages it had already read were saved as they arrived, so nothing is lost."""
+    cutoff = utcnow() - timedelta(seconds=JOB_TIMEOUT_SECONDS + 600)
+    async with SessionLocal() as session:
+        stuck = (
+            await session.execute(
+                select(IngestJob).where(IngestJob.status == "running", IngestJob.created_at < cutoff)
+            )
+        ).scalars().all()
+        for job in stuck:
+            job.status = "failed"
+            job.error = "The worker stopped while this was running. Pages read before then are saved; re-run to continue."
+        if stuck:
+            await session.commit()
+    return len(stuck)
+
+
 async def purge_expired_conversations() -> int:
     """Automatic retention (SAN-1127) — deletes conversations older than each
     bot's own retention_days. Bots with no retention set keep everything."""
@@ -153,6 +172,9 @@ async def run_forever() -> None:
     last_retention_check = datetime.min
     while True:
         if (utcnow() - last_retention_check).total_seconds() >= RETENTION_CHECK_SECONDS:
+            closed = await close_stuck_jobs()
+            if closed:
+                print(f"closed {closed} job(s) left running by a stopped worker")
             purged = await purge_expired_conversations()
             if purged:
                 print(f"retention: deleted {purged} expired conversations")
