@@ -23,8 +23,8 @@ from sqlalchemy import delete, select
 from .timeutil import utcnow
 from .db import SessionLocal, engine
 from .models import Bot, Chunk, Document, Source
-from .services.chunker import chunk_text
-from .services.embeddings import embed_texts
+from .services.chunker import chunk_text, clean_markdown
+from .services.embeddings import embed_documents
 from .services.parser import TABULAR_EXTENSIONS, extension_of
 
 OLD_OVERLAP_WORDS = 30  # what the old word-window chunker repeated between neighbouring pieces
@@ -61,20 +61,24 @@ async def run(apply: bool, bot_filter: str = "") -> None:
             for doc, source in rows:
                 if doc.disabled or not doc.raw_text or extension_of(doc.url) in TABULAR_EXTENSIONS:
                     continue
-                pieces = chunk_text(original_text(doc.raw_text))
+                # chunker_version 2 keeps the page's headings, so it is re-cut as is; version 1 only held the old
+                # overlapping pieces, which have to be stitched back together first.
+                page_text = doc.raw_text if doc.chunker_version >= 2 else original_text(doc.raw_text)
+                pieces = chunk_text(page_text)
                 old_count = len((await s.execute(select(Chunk.id).where(Chunk.document_id == doc.id))).scalars().all())
                 old_total += old_count
                 new_total += len(pieces)
                 done += 1
                 if not apply or not pieces:
                     continue
-                vectors = embed_texts(pieces)
+                vectors = await asyncio.to_thread(embed_documents, pieces)
                 await s.execute(delete(Chunk).where(Chunk.document_id == doc.id))
                 for text, vector in zip(pieces, vectors):
                     s.add(Chunk(tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
-                                visibility=source.visibility, text=text, embedding=vector))
+                                visibility=source.visibility, text=text, embedding_v2=vector))
                 joined = "\n\n".join(pieces)
-                doc.raw_text = joined
+                doc.raw_text = clean_markdown(page_text)
+                doc.chunker_version = 2
                 doc.content_hash = hashlib.sha256(joined.encode("utf-8")).hexdigest()
                 doc.last_crawled_at = doc.last_crawled_at or utcnow()
             if apply:

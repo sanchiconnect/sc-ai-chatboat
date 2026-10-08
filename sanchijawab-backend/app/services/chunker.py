@@ -23,6 +23,9 @@ _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 _AUTOLINK_RE = re.compile(r"<(?:https?://|www\.)[^>\s]*>")
 _BARE_URL_RE = re.compile(r"(?:https?://|www\.)[^\s)>\]]+")
 _BLANKS_RE = re.compile(r"[ \t\f\v]+")
+# Number counters are built from separate pieces ("3" "L+", "60" "+"), which read as "3 L+" / "60 +": rejoin
+# them so "3L+ startups" and "60+ partners" read the way the page shows them.
+_NUMBER_SUFFIX_RE = re.compile(r"(?<![\w,.])(\d[\d,]*(?:\.\d+)?)\s+((?:L|K|M|B|Cr|Lakh|Million|Billion)?\s*\+)")
 
 
 def _link_to_text(match: re.Match[str]) -> str:
@@ -41,6 +44,7 @@ def clean_markdown(text: str) -> str:
     text = _AUTOLINK_RE.sub(" ", text)
     text = _BARE_URL_RE.sub(" ", text)
     text = _BLANKS_RE.sub(" ", text)
+    text = _NUMBER_SUFFIX_RE.sub(lambda m: m.group(1) + m.group(2).replace(" ", ""), text)
     text = re.sub(r"\n[ ]+", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
@@ -59,24 +63,30 @@ def _tokenizer():
     return tok
 
 
-def chunk_text(text: str, max_tokens: int = MAX_TOKENS, overlap_tokens: int = OVERLAP_TOKENS) -> list[str]:
-    """Cleans `text` and splits it into overlapping pieces of at most `max_tokens` tokens, cut at word
-    boundaries. Returns [] for empty text."""
-    text = clean_markdown(text)
-    if not text:
-        return []
-    encoding = _tokenizer().encode(text, add_special_tokens=False)
-    offsets = encoding.offsets
+# Sections are packed together up to this size. Small, focused passages match a question better than one
+# long passage that mixes five topics (a "how many startups" counter buried in a whole home page never
+# ranked), while still being big enough to hold a complete thought.
+MERGE_TOKENS = 240
+
+_SECTION_SPLIT_RE = re.compile(r"(?m)^(?=#{1,4}\s)")
+
+
+def _count(text: str) -> int:
+    return len(_tokenizer().encode(text, add_special_tokens=False).ids)
+
+
+def _token_windows(text: str, size: int, overlap: int) -> list[str]:
+    """Overlapping windows of at most `size` tokens, cut at word boundaries."""
+    offsets = _tokenizer().encode(text, add_special_tokens=False).offsets
     n = len(offsets)
     if n == 0:
         return []
-    if n <= max_tokens:
+    if n <= size:
         return [" ".join(text.split())]
-
-    chunks: list[str] = []
+    windows: list[str] = []
     start = 0
     while start < n:
-        end = min(start + max_tokens, n)
+        end = min(start + size, n)
         a = offsets[start][0]
         b = offsets[end - 1][1]
         # Never end in the middle of a word: extend to the next space (a word piece, not a page).
@@ -84,8 +94,49 @@ def chunk_text(text: str, max_tokens: int = MAX_TOKENS, overlap_tokens: int = OV
             b += 1
         piece = " ".join(text[a:b].split())
         if piece:
-            chunks.append(piece)
+            windows.append(piece)
         if end == n:
             break
-        start = end - overlap_tokens
+        start = max(end - overlap, start + 1)
+    return windows
+
+
+def chunk_text(
+    text: str, max_tokens: int = MAX_TOKENS, overlap_tokens: int = OVERLAP_TOKENS, merge_tokens: int = MERGE_TOKENS,
+) -> list[str]:
+    """Cleans `text`, splits it at its headings, and packs neighbouring sections into passages of up to
+    `merge_tokens` tokens. A section longer than `max_tokens` is cut into overlapping windows, each one
+    starting with the section's heading so it is still clear what it is about. Returns [] for empty text."""
+    text = clean_markdown(text)
+    if not text:
+        return []
+    sections = [s.strip() for s in _SECTION_SPLIT_RE.split(text) if s.strip()]
+
+    chunks: list[str] = []
+    group: list[str] = []
+    group_tokens = 0
+
+    def flush() -> None:
+        nonlocal group, group_tokens
+        if group:
+            chunks.append(" ".join(" ".join(group).split()))
+        group, group_tokens = [], 0
+
+    for section in sections:
+        tokens = _count(section)
+        if tokens > max_tokens:
+            flush()
+            first_line, _, rest = section.partition("\n")
+            has_heading = first_line.lstrip().startswith("#") and bool(rest.strip())
+            heading = " ".join(first_line.split()) if has_heading else ""
+            body = rest if has_heading else section
+            room = max_tokens - (_count(heading) + 2 if heading else 0)
+            for i, window in enumerate(_token_windows(body, max(room, 80), overlap_tokens)):
+                chunks.append(f"{heading} {window}".strip() if heading else window)
+            continue
+        if group and group_tokens + tokens > merge_tokens:
+            flush()
+        group.append(section)
+        group_tokens += tokens
+    flush()
     return chunks

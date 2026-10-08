@@ -36,10 +36,11 @@ from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
 import httpx
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.cache_context import CacheMode
 
 from ..config import settings
+from .urlsafety import UnsafeURLError, assert_public_url
 
 CRAWLER_USER_AGENT = "SanchiJawabBot"
 
@@ -96,20 +97,60 @@ def _allowed_by_patterns(url: str, include: list[str], exclude: list[str]) -> bo
     return True
 
 
+def parse_extra_domains(raw: str) -> frozenset[str]:
+    """The owner's list of related websites ("livepitch.app, powerpitch.ai") as bare host names."""
+    hosts = set()
+    for part in re.split(r"[\s,;]+", raw or ""):
+        part = part.strip().lower()
+        if not part:
+            continue
+        host = urlparse(part if "//" in part else f"//{part}").netloc or part
+        host = host.split("/")[0].split(":")[0]
+        hosts.add(host[4:] if host.startswith("www.") else host)
+    return frozenset(h for h in hosts if "." in h)
+
+
+# Websites that nearly every site links to (social networks, app stores, search, maps, link shorteners...).
+# They are never suggested as "related websites" to read.
+_COMMON_LINK_TARGETS = (
+    "facebook.com", "fb.com", "twitter.com", "x.com", "linkedin.com", "instagram.com", "youtube.com", "youtu.be",
+    "whatsapp.com", "wa.me", "t.me", "telegram.me", "pinterest.com", "tiktok.com", "snapchat.com", "reddit.com",
+    "google.com", "goo.gl", "gstatic.com", "googleapis.com", "apple.com", "play.google.com", "microsoft.com",
+    "wordpress.org", "wordpress.com", "github.com", "medium.com", "vimeo.com", "flickr.com", "w3.org",
+    "cloudflare.com", "bit.ly", "gravatar.com", "calendly.com", "typeform.com", "forms.gle", "wikipedia.org",
+)
+
+
+def is_common_link_target(host: str) -> bool:
+    return any(host == d or host.endswith("." + d) for d in _COMMON_LINK_TARGETS)
+
+
+def in_scope(url_site: str, site: str, extras: frozenset[str]) -> bool:
+    """A page is in scope when it is on the seed site, on one of its subdomains (app.example.com for
+    example.com), or on a related website the owner listed (and that site's own subdomains)."""
+    for allowed in (site, *extras):
+        if url_site == allowed or url_site.endswith("." + allowed):
+            return True
+    return False
+
+
 def _extract_internal_links(
-    result, base_url: str, site: str, visited: set[str], include: list[str], exclude: list[str]
+    result, base_url: str, site: str, visited: set[str], include: list[str], exclude: list[str],
+    extras: frozenset[str] = frozenset(), discovered: dict[str, int] | None = None,
 ) -> list[str]:
-    """All same-domain, not-yet-visited, pattern-allowed links found on this
+    """All in-scope, not-yet-visited, pattern-allowed links found on this
     one page — no page-count limit here; the BFS loop in crawl_site is what
     enforces max_pages across the whole crawl, not any single page's link
-    count.
+    count. Links the browser classed as "external" are looked at too, because
+    subdomains and the owner's related websites count as external to it.
     """
     raw = []
     links = getattr(result, "links", None) or {}
-    for item in links.get("internal", []):
-        href = item.get("href") if isinstance(item, dict) else item
-        if href:
-            raw.append(href)
+    for kind in ("internal", "external"):
+        for item in links.get(kind, []):
+            href = item.get("href") if isinstance(item, dict) else item
+            if href:
+                raw.append(href)
 
     picked: list[str] = []
     for href in raw:
@@ -117,7 +158,12 @@ def _extract_internal_links(
         parsed = urlparse(abs_url)
         if parsed.scheme not in ("http", "https"):
             continue
-        if site_of(abs_url) != site:
+        if not in_scope(site_of(abs_url), site, extras):
+            # Not read, but remembered: other websites this one links to are offered to the owner as
+            # "related websites" to add (see Source.stats_json["related_sites"]).
+            host = site_of(abs_url)
+            if discovered is not None and host and "." in host and not is_common_link_target(host):
+                discovered[host] = discovered.get(host, 0) + 1
             continue
         if SKIP_EXT.search(abs_url) or SKIP_PATH.search(abs_url):
             continue
@@ -166,6 +212,8 @@ MIN_RENDERED_TEXT_CHARS = 200
 # single worker, and every site queued behind it, for as long as the browser cared to wait).
 PAGE_TIMEOUT_SECONDS = 75
 SITEMAP_TIMEOUT_SECONDS = 60
+PAGE_LOAD_TIMEOUT_MS = 60_000  # slow pages (heavy listings) really do need this long to navigate
+AFTER_SCROLL_PAUSE_S = 2.0
 
 
 async def _plain_get(url: str) -> str | None:
@@ -211,10 +259,24 @@ async def _fetch_page(crawler: AsyncWebCrawler, url: str) -> tuple[str | None, o
     try:
         # BYPASS: always read the live page. crawl4ai otherwise replays its own local copy, which made
         # scheduled re-scans keep returning the text from the first crawl and never see site updates.
-        result = await crawler.arun(url=url, cache_mode=CacheMode.BYPASS)
+        # scan_full_page scrolls the whole page before reading it. Many sites only fill in a section when it
+        # scrolls into view (animated number counters, lazy-loaded blocks); without scrolling, a counter
+        # reading "3L+ startups" was stored as "0 L+", so the assistant could not answer "how many startups".
+        # The short pause after scrolling lets counters that started counting as they came into view finish
+        # (one was caught at "59+" and "444+" instead of "60+" and "450+"). Waiting for "the text stopped
+        # changing" does not work: a counter that has not started yet also looks stable (still at 0).
+        config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS, scan_full_page=True, scroll_delay=0.3, delay_before_return_html=AFTER_SCROLL_PAUSE_S,
+            page_timeout=PAGE_LOAD_TIMEOUT_MS,
+        )
+        result = await crawler.arun(url=url, config=config)
         text = result.markdown or ""
         if len(text) < MIN_RENDERED_TEXT_CHARS:
-            retry = await crawler.arun(url=url, cache_mode=CacheMode.BYPASS, delay_before_return_html=3.0)
+            retry_config = CrawlerRunConfig(
+                cache_mode=CacheMode.BYPASS, scan_full_page=True, scroll_delay=0.3, delay_before_return_html=3.0,
+                page_timeout=PAGE_LOAD_TIMEOUT_MS,
+            )
+            retry = await crawler.arun(url=url, config=retry_config)
             retry_text = retry.markdown or ""
             if len(retry_text) > len(text):
                 return retry_text, retry
@@ -282,9 +344,17 @@ async def crawl_site(
     exclude_patterns: str = "",
     on_progress=None,
     on_page=None,
+    extra_domains: str = "",
+    discovered: dict[str, int] | None = None,
 ) -> list[tuple[str, str]]:
     """Crawl a site in one of three modes — see module docstring. Returns
     a list of (url, markdown) pairs, up to max_pages long.
+
+    Scope: the seed site and its subdomains, plus any related websites the owner listed in
+    `extra_domains` (for example a company's separate product sites). Each of those hosts is checked for
+    safety (public addresses only) and has its own robots.txt honoured. All of it shares the max_pages budget.
+    If `discovered` is given it is filled with {host: number of links} for the other websites the pages link
+    to (social networks and the like left out), so the owner can be offered them.
 
     `on_progress`, when given, is awaited as `on_progress(pages_done, pages_total)` after every page so a
     caller can show live progress (SAN-1087, FR-K8). `pages_total` is the best current estimate (pages
@@ -309,8 +379,8 @@ async def crawl_site(
         raise RobotsDisallowedError(f"robots.txt disallows crawling {seed_url}")
 
     pages: list[tuple[str, str]] = []
-    # Saving a page touches one database session, so saves take turns; fetching does not wait for them.
-    save_lock = asyncio.Lock()
+    # Progress numbers and the list of pages still to fetch change under this lock.
+    state_lock = asyncio.Lock()
 
     async def keep(url: str, text: str) -> None:
         if on_page is not None:
@@ -322,7 +392,24 @@ async def crawl_site(
     backlog: list[str] = []   # pages only the sitemap knows about
     follow_links = mode == "whole_domain"
     site = site_of(seed_url)
+    extras = parse_extra_domains(extra_domains) if follow_links else frozenset()
     visited: set[str] = {_normalize(seed_url)}
+
+    # robots.txt and the safety check are per host: the seed's was loaded above, others are loaded on first use.
+    host_rules: dict[str, tuple[RobotFileParser, float] | None] = {urlparse(seed_url).netloc.lower(): (robots, delay)}
+
+    async def host_allows(url: str) -> bool:
+        host = urlparse(url).netloc.lower()
+        if host not in host_rules:
+            try:
+                await asyncio.to_thread(assert_public_url, url)  # never fetch private/internal addresses
+                host_rules[host] = await _load_robots(url)
+            except UnsafeURLError:
+                host_rules[host] = None
+            except Exception:
+                host_rules[host] = None
+        rules = host_rules[host]
+        return rules is not None and rules[0].can_fetch(CRAWLER_USER_AGENT, url)
 
     if mode == "single_page":
         frontier, max_pages = [seed_url], 1
@@ -334,14 +421,23 @@ async def crawl_site(
         # "whole_domain": breadth-first from the seed; the sitemap then fills in pages nothing links to, so
         # "all pages" really means all pages.
         frontier = [seed_url]
-        try:
-            sitemap_urls = await asyncio.wait_for(_fetch_sitemap_urls(seed_url, max_pages), timeout=SITEMAP_TIMEOUT_SECONDS)
-        except Exception:
-            sitemap_urls = []
+        # The owner's related websites start from their home pages too (they're often only linked from a menu).
+        for extra in sorted(extras):
+            home = f"https://{extra}/"
+            if _normalize(home) not in visited:
+                visited.add(_normalize(home))
+                frontier.append(home)
+        sitemap_sources = [seed_url, *(f"https://{e}/" for e in sorted(extras))]
+        sitemap_urls: list[str] = []
+        for source_url in sitemap_sources:
+            try:
+                sitemap_urls += await asyncio.wait_for(_fetch_sitemap_urls(source_url, max_pages), timeout=SITEMAP_TIMEOUT_SECONDS)
+            except Exception:
+                pass
         for u in sitemap_urls:
             norm = _normalize(u)
             if (
-                norm in visited or site_of(u) != site or SKIP_EXT.search(u) or SKIP_PATH.search(u)
+                norm in visited or not in_scope(site_of(u), site, extras) or SKIP_EXT.search(u) or SKIP_PATH.search(u)
                 or not _allowed_by_patterns(u, include, exclude)
             ):
                 continue
@@ -358,10 +454,8 @@ async def crawl_site(
             await on_progress(state["done"], estimate())
 
     def next_url() -> str | None:
-        while frontier or backlog:
-            candidate = frontier.pop(0) if frontier else backlog.pop(0)
-            if robots.can_fetch(CRAWLER_USER_AGENT, candidate):
-                return candidate
+        if frontier or backlog:
+            return frontier.pop(0) if frontier else backlog.pop(0)
         return None
 
     async def worker(crawler: AsyncWebCrawler) -> None:
@@ -379,19 +473,23 @@ async def crawl_site(
                 await asyncio.sleep(0.05)
                 continue
 
+            # A page counts as "in flight" until it has also been handed over (saved), so the page limit can
+            # never be overshot while saves are still running.
             state["in_flight"] += 1
             try:
+                if not await host_allows(url):  # robots.txt or the safety check says no: skip, never fetch
+                    continue
                 text, result = await _fetch_page_guarded(crawler, url)
+                if text is None:
+                    continue
+                await keep(url, text)  # the caller saves it (and embeds it) while other workers keep fetching
+                async with state_lock:
+                    state["done"] += 1
+                    if follow_links and result is not None and state["done"] < max_pages:
+                        frontier.extend(_extract_internal_links(result, url, site, visited, include, exclude, extras, discovered))
+                    await report()
             finally:
                 state["in_flight"] -= 1
-            if text is None or state["done"] >= max_pages:
-                continue
-            async with save_lock:
-                await keep(url, text)
-                state["done"] += 1
-                if follow_links and result is not None and state["done"] < max_pages:
-                    frontier.extend(_extract_internal_links(result, url, site, visited, include, exclude))
-                await report()
             await asyncio.sleep(delay)
 
     await report()

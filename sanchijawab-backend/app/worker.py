@@ -22,6 +22,7 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 from .models import Bot, IngestJob, Source
+from .reembed import embed_missing
 from .services import privacy
 from .services.ingest import CrawlCancelled, ingest_file_source, ingest_website_source
 
@@ -187,6 +188,13 @@ async def run_forever() -> None:
         async with SessionLocal() as session:
             job = await claim_one_job(session)
         if job is None:
+            # Nothing to crawl: use the quiet moment to give any passage that still lacks its search vector
+            # one (after an upgrade or a restored database), a small batch at a time.
+            try:
+                if await embed_missing():
+                    continue  # more may be waiting; check for jobs again, then carry on
+            except Exception as e:  # noqa: BLE001 — never let this stop the worker
+                print(f"embedding backlog: {e}")
             await asyncio.sleep(POLL_SECONDS)
             continue
         await process_job(job)

@@ -111,8 +111,9 @@ async def ask(session, bot: Bot, question: str) -> dict:
     text = ""
     done: dict = {}
     handoff = False
+    trace: dict = {}
     async for event in answer_stream(
-        session, tenant_id=bot.tenant_id, bot_id=bot.id, business_name=bot.name, message=question,
+        session, tenant_id=bot.tenant_id, bot_id=bot.id, business_name=bot.name, message=question, trace=trace,
     ):
         if event["type"] == "delta":
             if first is None:
@@ -127,6 +128,8 @@ async def ask(session, bot: Bot, question: str) -> dict:
         "sources": [s["url"] for s in done.get("sources", [])],
         "first_token_s": round(first, 3) if first is not None else None,
         "total_s": round(time.perf_counter() - t0, 3),
+        # what the model was actually shown (the judge must check the answer against THIS, not a different search)
+        "_passages": [c["text"] for c in trace.get("chunks", [])],
     }
 
 
@@ -190,12 +193,10 @@ async def main(args: argparse.Namespace) -> int:
             judged = 0
             for i, question in enumerate(site_qs, 1):
                 res = await ask(session, bot, question)
+                passages = res.pop("_passages")
                 row = {"site": site, "question": question, **res, "groundedness": None}
                 if not args.skip_judge and not res["declined"] and judged < 2:
-                    passages = await retrieval.hybrid_search(
-                        session, tenant_id=bot.tenant_id, bot_id=bot.id, query=question
-                    )
-                    row["groundedness"] = judge("\n".join(f"[{j}] {p['text']}" for j, p in enumerate(passages, 1)), res["answer"])
+                    row["groundedness"] = judge("\n".join(f"[{j}] {p}" for j, p in enumerate(passages, 1)), res["answer"])
                     judged += 1
                 rows.append(row)
                 state = "HANDOFF" if res["handoff"] else "declined" if res["declined"] else "answered"

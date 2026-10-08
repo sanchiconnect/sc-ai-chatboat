@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import logging
 
 from ..config import settings
 from ..models import Chunk, Document, Source
-from .embeddings import embed_one
+from .embeddings import embed_query
 from .tracing import get_langfuse
 
 log = logging.getLogger(__name__)
@@ -57,11 +57,16 @@ async def hybrid_search(
         # `rerank=False` is for the extra "same question without the company name" search: it needs no
         # paid reranker call of its own (Cohere trial keys allow only 10 calls a minute).
         rerank_enabled = bool(settings.cohere_api_key) and rerank
-        # embed_one is CPU-bound and synchronous; run it in a thread so it
-        # doesn't freeze every other visitor's stream while it computes.
-        query_vector = await asyncio.to_thread(embed_one, query)
+        # The question is embedded by Gemini (a network call, so it runs in a thread). If that is unavailable
+        # the search carries on with keywords alone instead of failing the chat.
+        query_vector = await asyncio.to_thread(embed_query, query)
 
-        vector_score = (1 - Chunk.embedding.cosine_distance(query_vector)).label("vector_score")
+        if query_vector is not None:
+            # Passages not yet re-embedded have no vector (NULL): they simply score 0 on meaning and can
+            # still be found by keywords.
+            vector_score = func.coalesce(1 - Chunk.embedding_v2.cosine_distance(query_vector), 0.0).label("vector_score")
+        else:
+            vector_score = literal(0.0).label("vector_score")
         text_score = func.ts_rank_cd(Chunk.tsv, func.plainto_tsquery("english", query)).label("text_score")
         # Manual Q&A pairs override crawled/file content on conflict
         # (FR-K7) — a flat +1.0 outranks any possible vector+text

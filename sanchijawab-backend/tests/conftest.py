@@ -38,7 +38,37 @@ def _rate_limit_off(monkeypatch):
     # A developer's .env may set ALLOW_PRIVATE_URLS=true to crawl local sites;
     # tests must not depend on that.
     monkeypatch.setattr(settings, "allow_private_urls", False)
+    # bcrypt at production strength costs ~0.3 s per signup/login; 4 is its minimum and keeps the suite fast.
+    monkeypatch.setattr(settings, "bcrypt_rounds", 4)
     ratelimit.reset()
+
+
+@pytest.fixture(autouse=True)
+def _fake_gemini_embeddings(monkeypatch, request):
+    """Passages and questions are embedded by Gemini over the network. The suite must not depend on that (cost,
+    quota, internet), so it uses a deterministic stand-in: each word is hashed into a 768-d vector, which means
+    texts that share words are close together, enough for the tests that check "the right passage is found".
+    Set `@pytest.mark.real_embeddings` on a test to use the real service."""
+    if "real_embeddings" in request.keywords:
+        return
+    import hashlib
+    import math
+    import re
+
+    from app.services import embeddings
+
+    def fake(texts, task_type):
+        out = []
+        for text in texts:
+            vec = [0.0] * embeddings.GEMINI_DIMENSIONS
+            for word in re.findall(r"\w+", text.lower()):
+                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+                vec[h % embeddings.GEMINI_DIMENSIONS] += 1.0 if (h >> 20) & 1 else -1.0
+            norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+            out.append([x / norm for x in vec])
+        return out
+
+    monkeypatch.setattr(embeddings, "_embed_remote", fake)
 
 
 @pytest.fixture(autouse=True)

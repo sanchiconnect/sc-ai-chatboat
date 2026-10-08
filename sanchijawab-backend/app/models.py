@@ -167,6 +167,9 @@ class Source(Base):
     mode: Mapped[str] = mapped_column(String(16), default="whole_domain")
     include_patterns: Mapped[str] = mapped_column(Text, default="")
     exclude_patterns: Mapped[str] = mapped_column(Text, default="")
+    # Other websites the owner also wants read in the same crawl (a company's separate product sites).
+    # Comma/space separated host names; subdomains of the seed site are always included.
+    extra_domains: Mapped[str] = mapped_column(Text, default="", server_default="")
     max_pages: Mapped[int] = mapped_column(Integer, default=5000)
     ownership_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)  # explicit customer attestation at creation time (SAN-1083, FR-K4) — not technical verification, just an audit trail of consent
     rescan_interval_days: Mapped[int] = mapped_column(Integer, default=7)
@@ -195,6 +198,9 @@ class Document(Base):
     # this is what the Knowledge page's view/edit UI (SAN-1087, FR-K9) reads
     # and writes.
     raw_text: Mapped[str] = mapped_column(Text, default="")
+    # 1 = raw_text holds the old word-window pieces joined together (headings and line breaks already lost);
+    # 2 = raw_text holds the cleaned page text with its headings, so it can be re-cut any time without a re-crawl.
+    chunker_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # Disabling a document deletes its chunks (so retrieval just finds
     # nothing for it — no query-side join/filter needed) but keeps the row
     # and raw_text, so re-enabling just re-chunks/re-embeds instead of
@@ -216,7 +222,12 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text)
     heading_path: Mapped[str] = mapped_column(String(512), default="")
     token_count: Mapped[int] = mapped_column(Integer, default=0)
-    embedding: Mapped[list[float]] = mapped_column(Vector(settings.embed_dim))
+    # Legacy 384-d vector from the old local model. Kept (nullable) so a server still running the previous
+    # version keeps working during the switch; nothing reads it any more. A later migration drops it.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embed_dim), nullable=True)
+    # What search uses: Gemini embeddings, 768 dimensions. NULL until a passage has been (re-)embedded;
+    # `python -m app.reembed` fills in older rows.
+    embedding_v2: Mapped[list[float] | None] = mapped_column(Vector(settings.embed_dim_v2), nullable=True)
     tsv: Mapped[str] = mapped_column(TSVECTOR, Computed("to_tsvector('english', text)", persisted=True))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

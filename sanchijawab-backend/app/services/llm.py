@@ -66,7 +66,11 @@ a JSON object with these fields, nothing else:
  that asks or implies a need for real information>,
  "negative_sentiment": <true if the visitor's message expresses real frustration,
  anger, or strong dissatisfaction (not just a neutral or mildly negative question) —
- false otherwise>}"""
+ false otherwise>,
+ "search_queries": [<up to 2 alternative search phrasings for finding the answer on the business's
+ website: short keyword lists using the words a page that contains the answer would probably use
+ (synonyms, units, figures such as "4,000+" or "number of", product or role names). Do not repeat the
+ standalone_query. Use [] for small talk.>]}"""
 
 FOLLOW_UP_SYSTEM = """Given a visitor's question and the answer just given, suggest up to 3
 short, natural follow-up questions this visitor might reasonably ask next — things the
@@ -95,6 +99,9 @@ business — a greeting ("hi", "hello"), thanks, or a goodbye — don't need
 <knowledge> support. Respond to those naturally and briefly in the business's
 voice instead of saying you don't know; still ground every substantive,
 factual claim in <knowledge> as above.
+When the passages give a figure for what was asked (for example "4,000+ startups" or "3L+ startups/MSMEs"),
+give it as stated; if different passages give different figures for different groups, give each with what
+it counts. Do not say you lack "the exact number" when a stated figure answers the question.
 Reply in the visitor's language ({language}). Write a plain, natural answer —
 never include bracketed reference numbers like [1] or [2], footnote markers,
 or the word "Source" in the answer text itself; sources are shown separately
@@ -143,10 +150,16 @@ def _usage_details(resp) -> dict | None:
     return details or None
 
 
-async def fast_analyze(message: str, history: list[dict], summary: str = "") -> dict:
+async def fast_analyze(message: str, history: list[dict], summary: str = "", business: str = "") -> dict:
     history_text = "\n".join(f"{h['role']}: {h['content']}" for h in history[-10:])
     summary_block = f"Summary of earlier conversation: {summary}\n\n" if summary else ""
-    prompt = f"{summary_block}Conversation so far:\n{history_text}\n\nLatest visitor message: {message}"
+    business_line = (
+        f"The visitor is on the website of {business}; \"you\", \"your\" and \"the company\" mean {business}. "
+        "In standalone_query use that name, never a placeholder such as [Company Name], and keep the visitor's "
+        "own words (do not add words they did not say).\n\n"
+        if business else ""
+    )
+    prompt = f"{business_line}{summary_block}Conversation so far:\n{history_text}\n\nLatest visitor message: {message}"
 
     with get_langfuse().start_as_current_observation(
         as_type="generation",
@@ -253,7 +266,10 @@ async def suggest_follow_ups(question: str, answer: str) -> list[str]:
             )
             result = json.loads(resp.text)
             follow_ups = [q for q in result.get("follow_ups", []) if isinstance(q, str) and q.strip()][:3]
-        except (RETRYABLE_EXCEPTIONS, json.JSONDecodeError, TypeError, AttributeError) as exc:
+        # (* splices the tuple in: Python 3.12 rejects a tuple nested inside an except clause's tuple, and that
+        # only shows up at the moment an error actually happens — here, the model returning broken JSON, which
+        # crashed the whole chat reply instead of just skipping the follow-up chips.)
+        except (*RETRYABLE_EXCEPTIONS, json.JSONDecodeError, TypeError, AttributeError) as exc:
             logger.warning("suggest_follow_ups failed or unparseable: %r", exc)
             generation.update(output=[], level="WARNING", status_message="Follow-up suggestion failed or unparseable")
             return []
@@ -316,7 +332,7 @@ async def plan_action(message: str, history: list[dict], summary: str, actions: 
         )
         plan = json.loads(resp.text)
         return plan if isinstance(plan, dict) else {}
-    except (RETRYABLE_EXCEPTIONS, json.JSONDecodeError, TypeError, AttributeError, ValueError) as exc:
+    except (*RETRYABLE_EXCEPTIONS, json.JSONDecodeError, TypeError, AttributeError, ValueError) as exc:
         logger.warning("plan_action failed or unparseable: %r", exc)
         return {}
 

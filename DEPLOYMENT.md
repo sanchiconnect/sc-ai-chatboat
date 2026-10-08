@@ -44,6 +44,16 @@ git pull
 docker compose up -d --build        # migrations run automatically via the `migrate` job
 ```
 
+**Upgrading from a version that used the small local search model:** the `migrate` job adds the new vector column; the
+`worker` then fills it in for every existing passage by itself whenever it is idle (about 25 passages a second, using
+`CLOUD_API_KEY`; the knowledge base answers from keywords alone until it has caught up). To watch or force it:
+`docker compose exec worker python -m app.reembed`. Pages crawled before the chunking/cleaning upgrade keep their old
+passages until they are re-scanned (Knowledge tab, or `python -m app.reindex --apply` rebuilds them from stored text
+without crawling). The old 384-d column can be dropped later; nothing reads it.
+
+Crawling needs no extra setup in containers: `CRAWL_CONCURRENCY` (default 8) pages are fetched at once inside the worker
+container, and every new website source reads every page (up to `MAX_PAGES_PER_SITE`).
+
 ## Settings (`.env`)
 
 Required to start: `JWT_SECRET` (16+ characters, the API refuses to run without it), `CLOUD_API_KEY` (Google Gemini key),

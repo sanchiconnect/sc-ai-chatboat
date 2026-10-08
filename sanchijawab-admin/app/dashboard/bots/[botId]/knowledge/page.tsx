@@ -15,6 +15,9 @@ interface SourceRow {
   pages_total: number | null;
   rescan_interval_days: number;
   next_scan_at: string | null;
+  max_pages?: number;
+  extra_domains?: string;
+  related_sites?: { host: string; links: number }[];
 }
 
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.pptx,.txt,.md,.csv,.tsv,.xlsx";
@@ -36,6 +39,7 @@ export default function KnowledgePage() {
   const [mode, setMode] = useState<"whole_domain" | "single_page" | "sitemap">("whole_domain");
   const [includePatterns, setIncludePatterns] = useState("");
   const [excludePatterns, setExcludePatterns] = useState("");
+  const [extraDomains, setExtraDomains] = useState("");
   const [maxPages, setMaxPages] = useState(5000); // every page by default
   const [rescanIntervalDays, setRescanIntervalDays] = useState(7);
   const [ownershipConfirmed, setOwnershipConfirmed] = useState(false);
@@ -69,6 +73,7 @@ export default function KnowledgePage() {
         mode,
         includePatterns: includePatterns.trim(),
         excludePatterns: excludePatterns.trim(),
+        extraDomains: extraDomains.trim(),
         maxPages,
         ownershipConfirmed,
         rescanIntervalDays,
@@ -121,6 +126,23 @@ export default function KnowledgePage() {
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to start re-scan");
+    } finally {
+      setRescanningId(null);
+    }
+  }
+
+  // "This site links to livepitch.app — read that too?": adds it to the source's related websites and
+  // re-reads the source so its pages are included.
+  async function addRelatedSite(source: SourceRow, host: string) {
+    setRescanningId(source.source_id);
+    setError(null);
+    try {
+      const next = [source.extra_domains, host].filter(Boolean).join(", ");
+      await api.setSourceRelatedSites(source.source_id, next);
+      await api.rescanSource(source.source_id);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't add that website");
     } finally {
       setRescanningId(null);
     }
@@ -224,6 +246,17 @@ export default function KnowledgePage() {
             </label>
 
             <label className="text-xs text-fg-muted sm:col-span-2">
+              Also read these related websites <span className="text-fg-faint">(optional — e.g. your product sites: livepitch.app, powerpitch.ai. Subdomains like app.yoursite.com are always included. Only list sites you own or may crawl.)</span>
+              <input
+                value={extraDomains}
+                onChange={(e) => setExtraDomains(e.target.value)}
+                disabled={mode !== "whole_domain"}
+                placeholder="other-site.com, another-site.io"
+                className="mt-1 w-full border border-border rounded-lg px-2 py-1.5 disabled:opacity-50"
+              />
+            </label>
+
+            <label className="text-xs text-fg-muted sm:col-span-2">
               Include patterns <span className="text-fg-faint">(glob, comma/newline-separated — e.g. */blog/*, */docs/*)</span>
               <input
                 value={includePatterns}
@@ -321,6 +354,25 @@ export default function KnowledgePage() {
                   Next automatic re-scan: {new Date(s.next_scan_at).toLocaleDateString()} (every {s.rescan_interval_days}{" "}
                   days)
                 </p>
+              )}
+              {s.type === "website" && s.extra_domains && (
+                <p className="mt-1 text-[11px] text-fg-faint">Also reads: {s.extra_domains}</p>
+              )}
+              {s.type === "website" && !busy && (s.related_sites?.length ?? 0) > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]">
+                  <span className="text-fg-muted">This site also links to:</span>
+                  {s.related_sites!.map((r) => (
+                    <button
+                      key={r.host}
+                      onClick={() => addRelatedSite(s, r.host)}
+                      disabled={rescanningId === s.source_id}
+                      title={`Read ${r.host} as well, if you own it or may crawl it`}
+                      className="rounded-full border border-border bg-surface-2 px-2.5 py-0.5 font-medium text-accent-ink hover:border-accent disabled:opacity-50"
+                    >
+                      + {r.host}
+                    </button>
+                  ))}
+                </div>
               )}
               {expandedId === s.source_id && <SourceDocuments sourceId={s.source_id} />}
             </div>

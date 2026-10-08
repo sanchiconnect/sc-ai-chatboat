@@ -72,6 +72,18 @@ def _merge_chunks(primary: list[dict], extra: list[dict], limit: int = 10) -> li
     return merged[:limit]
 
 
+def _round_robin(lists: list[list[dict]], limit: int = 10) -> list[dict]:
+    """Takes the best of each ranked list in turn (1st of each, then 2nd of each, ...), without repeats."""
+    seen: set[str] = set()
+    merged: list[dict] = []
+    for rank in range(max((len(l) for l in lists), default=0)):
+        for lst in lists:
+            if rank < len(lst) and lst[rank]["chunk_id"] not in seen:
+                seen.add(lst[rank]["chunk_id"])
+                merged.append(lst[rank])
+    return merged[:limit]
+
+
 async def _head_then_rest(stream: AsyncIterator[str], peek: int = PEEK_CHARS):
     """Releases the first `peek` characters of a stream as one ("head", text) piece, then every later
     piece as ("delta", text). Lets the caller judge how an answer begins before showing any of it."""
@@ -156,7 +168,10 @@ async def answer_stream(
     history: list[dict] | None = None,
     conversation_id: str | None = None,
     visitor_id: str | None = None,
+    trace: dict | None = None,
 ) -> AsyncIterator[dict]:
+    """`trace`, when given, is filled with what the answer was based on (trace["chunks"]) so tests and the
+    quality evaluation can check the answer against the passages the model really saw."""
     history = history or []
 
     # Conversation memory beyond the last 10 turns (SAN-1093, FR-C5): the
@@ -215,12 +230,14 @@ async def answer_stream(
             if alt_first and alt_first != message:
                 speculative_alt = asyncio.create_task(_search_own_session(tenant_id, bot_id, alt_first, rerank=False))
 
+        phrasing_tasks: list[asyncio.Task] = []  # searches for the other phrasings (filled in once the question is analysed)
+
         def cancel_speculative() -> None:
-            for t in (speculative, speculative_alt):
+            for t in (speculative, speculative_alt, *phrasing_tasks):
                 if t:
                     t.cancel()
 
-        analysis = await llm.fast_analyze(message, history, summary_context)
+        analysis = await llm.fast_analyze(message, history, summary_context, business_name)
         if analysis.get("handoff_requested") or analysis.get("negative_sentiment"):
             cancel_speculative()
             trigger = "explicit_ask" if analysis.get("handoff_requested") else "sentiment"
@@ -229,7 +246,20 @@ async def answer_stream(
             return
 
         query = analysis.get("standalone_query") or message
+        if not history or re.search(r"\[[^\]]+\]", query):
+            # A first message has nothing to be "made standalone"; and a rewrite that left a placeholder
+            # such as [Company Name] in it would poison the search. The visitor's own words are the best query.
+            query = message
         language = analysis.get("language") or "en"
+        # Other ways the answer may be worded on the site; searched alongside the question itself, so a
+        # question like "how many startups" also finds the passage that says "4,000+ DeepTech startups".
+        alt_phrasings = [
+            q.strip() for q in (analysis.get("search_queries") or [])
+            if isinstance(q, str) and q.strip() and q.strip().lower() != query.strip().lower()
+        ][:2]
+        phrasing_tasks.extend(
+            asyncio.create_task(_search_own_session(tenant_id, bot_id, q, rerank=False)) for q in alt_phrasings
+        )
 
         if conversation_id:
             # Persisted so language-based routing rules (SAN-1112, FR-H3)
@@ -320,6 +350,17 @@ async def answer_stream(
             chunks = _merge_chunks(chunks, alt_chunks)
         elif speculative_alt is not None:
             speculative_alt.cancel()
+
+        extra_lists: list[list[dict]] = []
+        for task in phrasing_tasks:
+            try:
+                extra_lists.append(await task)
+            except Exception:
+                pass  # an extra phrasing is a bonus; never let it break the answer
+        if extra_lists:
+            chunks = _round_robin([chunks, *extra_lists], limit=12)
+        if trace is not None:
+            trace["chunks"] = chunks
 
         # Catalogue products related to the question (SAN-1800): the model may
         # recommend them, and the widget shows them as cards under the answer.

@@ -167,6 +167,7 @@ export const api = {
       mode?: "single_page" | "sitemap" | "whole_domain";
       includePatterns?: string;
       excludePatterns?: string;
+      extraDomains?: string;
       maxPages?: number;
       ownershipConfirmed?: boolean;
       rescanIntervalDays?: number;
@@ -182,6 +183,7 @@ export const api = {
         ...(opts?.mode ? { mode: opts.mode } : {}),
         ...(opts?.includePatterns ? { include_patterns: opts.includePatterns } : {}),
         ...(opts?.excludePatterns ? { exclude_patterns: opts.excludePatterns } : {}),
+        ...(opts?.extraDomains ? { extra_domains: opts.extraDomains } : {}),
         ...(opts?.maxPages ? { max_pages: opts.maxPages } : {}),
         ...(opts?.rescanIntervalDays ? { rescan_interval_days: opts.rescanIntervalDays } : {}),
       }),
@@ -191,6 +193,13 @@ export const api = {
     request<{ source_id: string; rescan_interval_days: number }>(`/v1/sources/${sourceId}`, {
       method: "PATCH",
       body: JSON.stringify({ rescan_interval_days: rescanIntervalDays }),
+    }),
+
+  // Which other websites a source reads along with its own (replaces the whole list).
+  setSourceRelatedSites: (sourceId: string, extraDomains: string) =>
+    request<{ source_id: string; extra_domains: string }>(`/v1/sources/${sourceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ extra_domains: extraDomains }),
     }),
 
   stopSource: (sourceId: string) =>
@@ -214,6 +223,9 @@ export const api = {
         pages_total: number | null;
         rescan_interval_days: number;
         next_scan_at: string | null;
+        max_pages: number;
+        extra_domains: string;
+        related_sites: { host: string; links: number }[];
       }[]
     >(`/v1/bots/${botId}/sources`),
 

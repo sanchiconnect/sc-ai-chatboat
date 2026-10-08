@@ -45,9 +45,14 @@ class Settings(BaseSettings):
     db_pass: str = "sanchijawab"
     db_name: str = "sanchijawab"
 
+    # Password hashing cost (each +1 doubles the time). 12 is the production-grade default; the test suite
+    # lowers it so creating hundreds of throwaway users doesn't take minutes.
+    bcrypt_rounds: int = 12
+
     # Embeddings
     embed_provider: str = "fastembed"
-    embed_dim: int = 384
+    embed_dim: int = 384  # legacy / products (local bge-small)
+    embed_dim_v2: int = 768  # knowledge passages (Gemini embeddings), column chunks.embedding_v2
     # Per-IP rate limiting on login/signup and public widget routes (SAN-1126).
     rate_limit_enabled: bool = True
     # SSRF guard (app/services/urlsafety.py): crawl/webhook URLs must resolve

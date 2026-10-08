@@ -61,9 +61,10 @@ from .services.auth import (
     verify_password,
 )
 from .services.chunker import chunk_text
+from .services.crawler import parse_extra_domains
 from .services.conversations import add_message, get_or_create_conversation, list_messages
 from .services.email import send_email, send_invite_email, send_notice_email, send_verification_email
-from .services.embeddings import embed_texts
+from .services.embeddings import embed_documents
 from .services.parser import DOCLING_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, TABULAR_EXTENSIONS, extension_of
 from .services.payments import razorpay_gateway, stripe_gateway
 from .services.payments.gateways import gateway_out, upsert_gateway
@@ -1109,6 +1110,7 @@ class CreateSourceRequest(BaseModel):
     mode: str = "whole_domain"
     include_patterns: str = ""
     exclude_patterns: str = ""
+    extra_domains: str = ""  # other websites to read in the same crawl, e.g. "livepitch.app, powerpitch.ai"
     max_pages: int = settings.max_pages_per_site  # default: every page the crawler can find, up to the platform ceiling
     ownership_confirmed: bool = False  # SAN-1083/FR-K4 — must be explicitly true; we crawl on the customer's behalf, not public scraping
     rescan_interval_days: int = 7  # SAN-1088/FR-K10 — how often this source re-crawls itself automatically
@@ -1128,6 +1130,14 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
         assert_public_url(body.url)
     except UnsafeURLError as e:
         raise HTTPException(422, str(e))
+    extras = sorted(parse_extra_domains(body.extra_domains))
+    if len(extras) > 10:
+        raise HTTPException(422, "You can add up to 10 related websites")
+    for host in extras:
+        try:
+            assert_public_url(f"https://{host}/")
+        except UnsafeURLError as e:
+            raise HTTPException(422, f"{host}: {e}")
 
     async with SessionLocal() as session:
         bot = await session.get(Bot, body.bot_id)
@@ -1144,7 +1154,7 @@ async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(g
             url=body.url, visibility=body.visibility, status="pending",
             ownership_confirmed=body.ownership_confirmed,
             mode=body.mode, include_patterns=body.include_patterns,
-            exclude_patterns=body.exclude_patterns, max_pages=body.max_pages,
+            exclude_patterns=body.exclude_patterns, extra_domains=", ".join(extras), max_pages=body.max_pages,
             rescan_interval_days=body.rescan_interval_days,
             next_scan_at=utcnow() + timedelta(days=body.rescan_interval_days),
         )
@@ -1290,6 +1300,12 @@ async def list_sources(bot_id: str, user: CurrentUser = Depends(get_current_user
                 "pages_done": job.pages_done if job else None, "pages_total": job.pages_total if job else None,
                 "rescan_interval_days": s.rescan_interval_days,
                 "next_scan_at": s.next_scan_at.isoformat() if s.next_scan_at else None,
+                "max_pages": s.max_pages, "extra_domains": s.extra_domains,
+                # Other websites this one links to (found during the last crawl) that aren't read yet.
+                "related_sites": [
+                    r for r in (s.stats_json or {}).get("related_sites", [])
+                    if r["host"] not in parse_extra_domains(s.extra_domains)
+                ],
             })
         return result
 
@@ -1356,13 +1372,27 @@ async def stop_source(source_id: str, user: CurrentUser = Depends(get_current_us
 
 
 class UpdateSourceRequest(BaseModel):
-    rescan_interval_days: int
+    rescan_interval_days: int | None = None
+    extra_domains: str | None = None  # related websites to read as well (replaces the list)
+    max_pages: int | None = None
 
 
 @app.patch("/v1/sources/{source_id}")
 async def update_source(source_id: str, body: UpdateSourceRequest, user: CurrentUser = Depends(get_current_user)):
-    if not 5 <= body.rescan_interval_days <= 365:
+    if body.rescan_interval_days is not None and not 5 <= body.rescan_interval_days <= 365:
         raise HTTPException(422, "rescan_interval_days must be between 5 and 365")
+    if body.max_pages is not None and not 1 <= body.max_pages <= settings.max_pages_per_site:
+        raise HTTPException(422, f"max_pages must be between 1 and {settings.max_pages_per_site}")
+    extras: list[str] | None = None
+    if body.extra_domains is not None:
+        extras = sorted(parse_extra_domains(body.extra_domains))
+        if len(extras) > 10:
+            raise HTTPException(422, "You can add up to 10 related websites")
+        for host in extras:
+            try:
+                assert_public_url(f"https://{host}/")
+            except UnsafeURLError as e:
+                raise HTTPException(422, f"{host}: {e}")
     async with SessionLocal() as session:
         source = await session.get(Source, source_id)
         if source is None:
@@ -1370,10 +1400,18 @@ async def update_source(source_id: str, body: UpdateSourceRequest, user: Current
         bot = await session.get(Bot, source.bot_id)
         await require_workspace_role(bot.workspace_id, user, min_role="admin", session=session)
 
-        source.rescan_interval_days = body.rescan_interval_days
-        source.next_scan_at = utcnow() + timedelta(days=body.rescan_interval_days)
+        if body.rescan_interval_days is not None:
+            source.rescan_interval_days = body.rescan_interval_days
+            source.next_scan_at = utcnow() + timedelta(days=body.rescan_interval_days)
+        if extras is not None:
+            source.extra_domains = ", ".join(extras)
+        if body.max_pages is not None:
+            source.max_pages = body.max_pages
         await session.commit()
-        return {"source_id": source.id, "rescan_interval_days": source.rescan_interval_days}
+        return {
+            "source_id": source.id, "rescan_interval_days": source.rescan_interval_days,
+            "extra_domains": source.extra_domains, "max_pages": source.max_pages,
+        }
 
 
 async def _get_document_for_user(session, document_id: str, user: CurrentUser, min_role: str) -> tuple[Document, Source]:
@@ -1434,6 +1472,7 @@ async def edit_document(document_id: str, body: EditDocumentRequest, user: Curre
         pieces = chunk_text(body.content)
         content_hash = hashlib.sha256("\n\n".join(pieces).encode("utf-8")).hexdigest()
         doc.raw_text = body.content
+        doc.chunker_version = 2
         doc.content_hash = content_hash
         doc.disabled = False
         doc.status = "indexed"
@@ -1443,11 +1482,11 @@ async def edit_document(document_id: str, body: EditDocumentRequest, user: Curre
             doc.status = "failed"
             doc.error = "no extractable content"
         else:
-            vectors = embed_texts(pieces)
+            vectors = await asyncio.to_thread(embed_documents, pieces)
             for text, vector in zip(pieces, vectors):
                 session.add(Chunk(
                     tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
-                    visibility=source.visibility, text=text, embedding=vector,
+                    visibility=source.visibility, text=text, embedding_v2=vector,
                 ))
                 stats["chunks"] += 1
             stats["pages"] += 1
@@ -1465,11 +1504,11 @@ async def _set_document_disabled(document_id: str, user: CurrentUser, disabled: 
         if not disabled and doc.raw_text:
             pieces = chunk_text(doc.raw_text)
             if pieces:
-                vectors = embed_texts(pieces)
+                vectors = await asyncio.to_thread(embed_documents, pieces)
                 for text, vector in zip(pieces, vectors):
                     session.add(Chunk(
                         tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
-                        visibility=source.visibility, text=text, embedding=vector,
+                        visibility=source.visibility, text=text, embedding_v2=vector,
                     ))
             doc.status = "indexed"
         elif disabled:

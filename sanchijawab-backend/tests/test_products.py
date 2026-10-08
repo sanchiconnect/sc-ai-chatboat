@@ -107,7 +107,7 @@ async def test_chat_returns_cards_and_gives_the_model_the_products(client: Async
     await _add_all(client, signed_up_owner, bot)
     seen = {}
 
-    async def fake_analyze(message, history, summary=""):
+    async def fake_analyze(message, history, summary="", business=""):
         return {"standalone_query": message, "language": "en", "is_conversational": False}
 
     async def fake_stream(business, language, question, knowledge, *a, **k):
@@ -135,7 +135,7 @@ async def test_chat_returns_cards_and_gives_the_model_the_products(client: Async
 async def test_no_cards_when_the_bot_declines(client: AsyncClient, signed_up_owner: dict, bot: str, monkeypatch):
     await _add_all(client, signed_up_owner, bot)
 
-    async def fake_analyze(message, history, summary=""):
+    async def fake_analyze(message, history, summary="", business=""):
         return {"standalone_query": message, "language": "en", "is_conversational": False}
 
     async def fake_stream(*a, **k):

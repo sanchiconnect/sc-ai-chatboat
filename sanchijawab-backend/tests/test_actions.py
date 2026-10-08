@@ -51,7 +51,7 @@ def calls(monkeypatch):
 
 
 def fake_llm(monkeypatch, plan: dict, seen: dict | None = None):
-    async def analyze(message, history, summary=""):
+    async def analyze(message, history, summary="", business=""):
         return {"standalone_query": message, "language": "en", "is_conversational": False}
 
     async def planner(message, history, summary, actions):
