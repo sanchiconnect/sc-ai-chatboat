@@ -36,7 +36,7 @@ export default function KnowledgePage() {
   const [mode, setMode] = useState<"whole_domain" | "single_page" | "sitemap">("whole_domain");
   const [includePatterns, setIncludePatterns] = useState("");
   const [excludePatterns, setExcludePatterns] = useState("");
-  const [maxPages, setMaxPages] = useState(40);
+  const [maxPages, setMaxPages] = useState(5000); // every page by default
   const [rescanIntervalDays, setRescanIntervalDays] = useState(7);
   const [ownershipConfirmed, setOwnershipConfirmed] = useState(false);
 
@@ -195,16 +195,20 @@ export default function KnowledgePage() {
             </label>
 
             <label className="text-xs text-fg-muted">
-              Max pages
-              <input
-                type="number"
-                min={1}
-                max={500}
+              How many pages to read
+              <select
                 value={maxPages}
-                onChange={(e) => setMaxPages(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                onChange={(e) => setMaxPages(Number(e.target.value))}
                 disabled={mode === "single_page"}
-                className="mt-1 w-full border border-border rounded-lg px-2 py-1.5 disabled:opacity-50"
-              />
+                className="mt-1 w-full border border-border rounded-lg px-2 py-1.5 text-sm disabled:opacity-50"
+              >
+                <option value={5000}>Every page (up to 5,000)</option>
+                <option value={1000}>Up to 1,000 pages</option>
+                <option value={500}>Up to 500 pages</option>
+                <option value={250}>Up to 250 pages</option>
+                <option value={100}>Up to 100 pages</option>
+                <option value={40}>Up to 40 pages</option>
+              </select>
             </label>
 
             <label className="text-xs text-fg-muted">

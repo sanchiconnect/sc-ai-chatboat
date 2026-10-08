@@ -1109,7 +1109,7 @@ class CreateSourceRequest(BaseModel):
     mode: str = "whole_domain"
     include_patterns: str = ""
     exclude_patterns: str = ""
-    max_pages: int = 40  # same hard crawl cap as before (SAN-1082); raise per-source if a site genuinely needs more
+    max_pages: int = settings.max_pages_per_site  # default: every page the crawler can find, up to the platform ceiling
     ownership_confirmed: bool = False  # SAN-1083/FR-K4 — must be explicitly true; we crawl on the customer's behalf, not public scraping
     rescan_interval_days: int = 7  # SAN-1088/FR-K10 — how often this source re-crawls itself automatically
 
@@ -1118,8 +1118,8 @@ class CreateSourceRequest(BaseModel):
 async def create_source(body: CreateSourceRequest, user: CurrentUser = Depends(get_current_user)):
     if body.mode not in SOURCE_MODES:
         raise HTTPException(422, f"mode must be one of {sorted(SOURCE_MODES)}")
-    if not 1 <= body.max_pages <= 500:
-        raise HTTPException(422, "max_pages must be between 1 and 500")
+    if not 1 <= body.max_pages <= settings.max_pages_per_site:
+        raise HTTPException(422, f"max_pages must be between 1 and {settings.max_pages_per_site}")
     if not body.ownership_confirmed:
         raise HTTPException(422, "You must confirm you own this site or have permission to crawl it")
     if not 5 <= body.rescan_interval_days <= 365:

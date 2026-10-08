@@ -9,6 +9,7 @@ these files are new.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import datetime
 
@@ -20,6 +21,7 @@ from ..models import Chunk, Document, IngestJob, Source
 from . import storage
 from .chunker import chunk_text
 from .crawler import crawl_site
+from .plan_limits import remaining_page_allowance
 from .embeddings import embed_texts
 from .parser import TABULAR_EXTENSIONS, extension_of, parse_to_markdown
 from .tabular import parse_tabular_to_chunks
@@ -68,7 +70,8 @@ async def store_document(
         doc.error = "no extractable content"
         return
 
-    vectors = embed_texts(pieces)
+    # Embedding is CPU work; in a thread, so other pages keep downloading while this one is embedded.
+    vectors = await asyncio.to_thread(embed_texts, pieces)
     for text, vector in zip(pieces, vectors):
         chunk = Chunk(
             tenant_id=source.tenant_id, bot_id=source.bot_id, document_id=doc.id,
@@ -111,24 +114,34 @@ async def ingest_website_source(
             if job.cancel_requested:
                 raise CrawlCancelled(f"Stopped after {done} page(s)")
 
-    pages = await crawl_site(
-        source.url,
-        max_pages=max_pages or source.max_pages,
-        mode=source.mode,
-        include_patterns=source.include_patterns,
-        exclude_patterns=source.exclude_patterns,
-        on_progress=on_progress,
-    )
     stats = {"pages": 0, "chunks": 0, "skipped": 0}
 
-    for url, markdown in pages:
+    async def on_page(url: str, markdown: str) -> None:
+        # Each page is cleaned, embedded and saved the moment it is fetched, so the assistant can already
+        # answer from the first pages while the rest of the site is still being read, and a stopped or
+        # crashed crawl keeps everything it had read so far.
         doc = (
             await session.execute(
                 select(Document).where(Document.source_id == source.id, Document.url == url)
             )
         ).scalar_one_or_none()
         await store_document(session, source, doc, url, chunk_text(markdown), stats)
+        await session.commit()
 
+    limit = max_pages or source.max_pages
+    allowance = await remaining_page_allowance(session, source)
+    if allowance is not None:
+        limit = min(limit, allowance)  # never crawl past what the workspace's plan allows
+
+    await crawl_site(
+        source.url,
+        max_pages=limit,
+        mode=source.mode,
+        include_patterns=source.include_patterns,
+        exclude_patterns=source.exclude_patterns,
+        on_progress=on_progress,
+        on_page=on_page,
+    )
     await session.commit()
     return stats
 

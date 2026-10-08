@@ -26,6 +26,7 @@ from .services import privacy
 from .services.ingest import CrawlCancelled, ingest_file_source, ingest_website_source
 
 POLL_SECONDS = 2
+JOB_TIMEOUT_SECONDS = 3 * 3600  # no single crawl may hold the worker longer than this
 RETENTION_CHECK_SECONDS = 3600
 SCHEDULE_CHECK_SECONDS = 60  # scheduled re-scans don't need second-level precision
 
@@ -48,6 +49,7 @@ async def claim_one_job(session) -> IngestJob | None:
 
 
 async def process_job(job: IngestJob) -> None:
+    job_id = job.id
     async with SessionLocal() as session:
         job = await session.get(IngestJob, job.id)
         source = None
@@ -56,7 +58,7 @@ async def process_job(job: IngestJob) -> None:
             if source.type == "file":
                 stats = await ingest_file_source(session, source)
             else:
-                stats = await ingest_website_source(session, source, job=job)
+                stats = await asyncio.wait_for(ingest_website_source(session, source, job=job), timeout=JOB_TIMEOUT_SECONDS)
             job.status = "done"
             job.error = None
             source.status = "indexed"
@@ -73,6 +75,24 @@ async def process_job(job: IngestJob) -> None:
             if source is not None:
                 source.status = "indexed" if source.status == "indexed" else "failed"
             print(f"job {job.id} cancelled: {e}")
+        except asyncio.TimeoutError:
+            # The crawl ran past its overall time limit. Every page read so far was already saved (pages are
+            # stored as they arrive), so the job is closed out in a fresh session rather than left "running"
+            # forever and blocking every site queued behind it.
+            await session.rollback()
+            async with SessionLocal() as fresh:
+                stuck = await fresh.get(IngestJob, job_id)
+                stuck.status = "failed"
+                stuck.error = (
+                    f"Stopped after {JOB_TIMEOUT_SECONDS // 3600} hours. The pages read so far are saved; "
+                    "re-run it to continue (unchanged pages are skipped)."
+                )
+                src = await fresh.get(Source, stuck.source_id)
+                if src is not None:
+                    src.status = "indexed"
+                await fresh.commit()
+            print(f"job {job_id} timed out")
+            return
         except Exception as e:
             job.status = "failed"
             job.error = str(e)[:1024]

@@ -29,3 +29,6 @@ sanchijawab-backend/app/eval/last_run.json
 integrations/dist/
 
 backups/
+
+# process ids written by scripts\start-demo.ps1 (local runtime state)
+.demo-pids.json

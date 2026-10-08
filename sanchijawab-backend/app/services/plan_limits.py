@@ -84,6 +84,28 @@ async def enforce_page_limit(session: AsyncSession, workspace: Workspace) -> Non
         raise HTTPException(402, f"This workspace has reached its plan's page limit ({plan.max_pages}).")
 
 
+async def remaining_page_allowance(session: AsyncSession, source) -> int | None:
+    """How many more pages this source's workspace may index under its plan (None = no cap). Pages this
+    source already holds don't count against it, because a re-crawl replaces them rather than adding."""
+    bot = await session.get(Bot, source.bot_id)
+    workspace = await session.get(Workspace, bot.workspace_id) if bot else None
+    if workspace is None:
+        return None
+    plan = await _get_plan(session, workspace)
+    if plan is None or plan.max_pages is None:
+        return None
+    others = (
+        await session.execute(
+            select(func.count())
+            .select_from(Document)
+            .join(Source, Document.source_id == Source.id)
+            .join(Bot, Source.bot_id == Bot.id)
+            .where(Bot.workspace_id == workspace.id, Source.id != source.id)
+        )
+    ).scalar_one()
+    return max(plan.max_pages - others, 1)
+
+
 async def enforce_file_limit(session: AsyncSession, workspace: Workspace) -> None:
     plan = await _get_plan(session, workspace)
     if plan is None or plan.max_files is None:
