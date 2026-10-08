@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
   { href: "/staff", label: "Workspaces" },
+  { href: "/staff/billing", label: "Plans & payments" },
   { href: "/staff/content", label: "Website content" },
   { href: "/staff/settings", label: "Settings & activity" },
 ];
@@ -40,9 +41,9 @@ export default function StaffConsoleLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="border-b border-border">
-        <div className="max-w-[1240px] mx-auto px-4 py-3.5 flex items-center justify-between">
+    <div className="min-h-screen bg-bg app-backdrop">
+      <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur-md">
+        <div className="max-w-[1240px] mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
           <div className="flex items-center gap-2.5">
             <div className="w-[30px] h-[30px] rounded-lg bg-fg text-bg flex items-center justify-center font-display font-semibold text-sm flex-none">
               S
@@ -52,7 +53,7 @@ export default function StaffConsoleLayout({ children }: { children: React.React
               <div className="text-[11px] text-fg-faint leading-tight">Platform operator view — not visible to customers</div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {NAV.map((item) => {
               const active = item.href === "/staff" ? pathname === "/staff" || pathname.startsWith("/staff/workspaces") : pathname.startsWith(item.href);
               return (
@@ -82,7 +83,9 @@ export default function StaffConsoleLayout({ children }: { children: React.React
           </div>
         </div>
       </header>
-      <main className="max-w-[1240px] mx-auto px-4 py-5">{children}</main>
+      <main key={pathname} className="max-w-[1240px] mx-auto px-4 py-5 page-enter">
+        {children}
+      </main>
     </div>
   );
 }

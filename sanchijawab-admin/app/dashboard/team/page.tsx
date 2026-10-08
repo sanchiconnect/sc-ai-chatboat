@@ -5,6 +5,9 @@ import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { resolveWorkspace } from "@/lib/workspace-store";
+import { pingNotifications, useLive } from "@/lib/use-live";
+
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", agent: "Agent", viewer: "Viewer" };
 
 type Member = { user_id: string; email: string; role: string; active: boolean };
 type WorkspaceOption = { workspace_id: string; name: string; role: string };
@@ -22,6 +25,9 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
+  // Only owners and admins manage the team; everyone else just sees who is in it.
+  const canManage = myRole === "owner" || myRole === "admin";
 
   async function load(wsId: string) {
     try {
@@ -41,9 +47,19 @@ export default function TeamPage() {
       if (!ws) return;
       setWorkspaceId(ws.workspace_id);
       setWorkspaceName(ws.name);
+      setMyRole(ws.role);
       load(ws.workspace_id);
     });
   }, []);
+
+  // Invites accepted, roles changed or people removed by someone else show up on their own.
+  useLive(() => {
+    if (workspaceId) api.listMembers(workspaceId).then(setMembers).catch(() => {});
+    api.listWorkspaces().then((list) => {
+      const ws = resolveWorkspace(list);
+      if (ws) setMyRole(ws.role);
+    }).catch(() => {});
+  }, 8_000, [workspaceId]);
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
@@ -60,6 +76,7 @@ export default function TeamPage() {
           : "Invite created, but no email was sent (SMTP not configured) — the invite link would normally go out by email.",
       );
       await load(workspaceId);
+      pingNotifications();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to send invite");
     } finally {
@@ -74,6 +91,7 @@ export default function TeamPage() {
     try {
       await api.updateMemberRole(workspaceId, userId, role);
       await load(workspaceId);
+      pingNotifications();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to change role");
     } finally {
@@ -88,6 +106,7 @@ export default function TeamPage() {
     try {
       await api.removeMember(workspaceId, userId);
       await load(workspaceId);
+      pingNotifications();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to remove member");
     } finally {
@@ -128,7 +147,16 @@ export default function TeamPage() {
           <ProfileMenu email={email} />
         </div>
 
-        <form onSubmit={invite} className="bg-surface border border-border rounded-2xl shadow-card p-4 mb-4 flex gap-2 flex-wrap">
+        {myRole && !canManage && (
+          <div className="mb-4 rounded-2xl border border-border bg-surface px-4 py-3 text-[13px] text-fg-muted shadow-card">
+            You&apos;re {myRole === "agent" ? "an" : "a"} <strong className="text-fg">{ROLE_LABEL[myRole] ?? myRole}</strong> in this workspace.
+            Only owners and admins can invite people, change roles or remove teammates.
+          </div>
+        )}
+
+        {canManage && (
+        <form onSubmit={invite} className="bg-surface border border-border rounded-2xl shadow-card p-4 mb-4">
+          <fieldset disabled={inviting} className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
           <input
             type="email"
             required
@@ -154,7 +182,9 @@ export default function TeamPage() {
           >
             {inviting ? "Inviting…" : "Invite teammate"}
           </button>
+          </fieldset>
         </form>
+        )}
 
         {notice && <div className="text-[13px] text-accent-ink bg-accent-soft rounded-lg p-3 mb-4">{notice}</div>}
         {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3 mb-4">{error}</div>}
@@ -177,10 +207,13 @@ export default function TeamPage() {
                   const busy = busyUserId === m.user_id;
                   return (
                     <tr key={m.user_id} className="border-t border-border">
-                      <td className="p-2.5">{m.email}</td>
-                      <td className="p-2.5 capitalize">
-                        {m.role === "owner" ? (
-                          "Owner"
+                      <td className="p-2.5">
+                        {m.email}
+                        {m.email === email && <span className="ml-1.5 text-[11px] text-fg-faint">(you)</span>}
+                      </td>
+                      <td className="p-2.5">
+                        {m.role === "owner" || !canManage ? (
+                          ROLE_LABEL[m.role] ?? m.role
                         ) : (
                           <select
                             value={m.role}
@@ -205,7 +238,7 @@ export default function TeamPage() {
                         </span>
                       </td>
                       <td className="p-2.5 text-right whitespace-nowrap">
-                        {m.role !== "owner" && (
+                        {canManage && m.role !== "owner" && (
                           <div className="flex gap-3 justify-end">
                             {!m.active && (
                               <button

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { useLive } from "@/lib/use-live";
 
 type Lead = {
   lead_id: string; conversation_id: string; name: string; email: string; phone: string;
@@ -33,6 +34,11 @@ export default function LeadsPage() {
       .finally(() => setLoading(false));
     api.getBot(botId).then((bot) => setWebhookUrl(bot.crm_webhook_url)).catch(() => {});
   }, [botId]);
+
+  // A lead captured in the widget shows up here without a refresh.
+  useLive(() => {
+    api.listLeads(botId).then(setLeads).catch(() => {});
+  }, 8_000, [botId]);
 
   async function saveWebhook(e: React.FormEvent) {
     e.preventDefault();

@@ -6,7 +6,7 @@
   --bg: #f6f5fb;
   --surface: #ffffff;
   --surface-2: #fbfaff;
-  --border: #e3e1ef;
+  --border: #d9d6ea;
   --fg: #1c1a2e;
   --fg-muted: #6b6880;
   /* WCAG 2.2 AA pass: the original #9c99ae read at ~2.6:1 on surface/bg —
@@ -45,7 +45,7 @@
     --bg: #15131f;
     --surface: #1d1a2b;
     --surface-2: #211e31;
-    --border: #322e45;
+    --border: #3e3a58;
     --fg: #efedfa;
     --fg-muted: #a6a2be;
     /* WCAG 2.2 AA pass: #716d8a read 3.5-3.7:1 against these darker
@@ -77,7 +77,7 @@
   --bg: #15131f;
   --surface: #1d1a2b;
   --surface-2: #211e31;
-  --border: #322e45;
+  --border: #3e3a58;
   --fg: #efedfa;
   --fg-muted: #a6a2be;
   --fg-faint: #86839c;
@@ -100,6 +100,149 @@
 body {
   background: var(--bg);
   color: var(--fg);
+}
+
+/* Ambient backdrop for the signed-in app (dashboard + super admin): two soft
+   colour washes fixed behind the content so pages don't read as flat. Uses
+   the existing tokens, so it follows light/dark automatically. */
+.app-backdrop {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1300px 640px at 0% -12%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
+    radial-gradient(1100px 560px at 100% -8%, color-mix(in srgb, var(--warm) 20%, transparent), transparent 70%),
+    radial-gradient(900px 520px at 55% 115%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    radial-gradient(circle, color-mix(in srgb, var(--fg) 14%, transparent) 1px, transparent 1.4px);
+  background-size: auto, auto, auto, 26px 26px;
+  background-attachment: fixed;
+}
+
+/* Route-change entrance — gives instant visual feedback on navigation. */
+.page-enter {
+  animation: pageEnter 0.28s ease-out both;
+}
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Cards that can be clicked/hovered lift slightly. */
+.lift {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+/* Sidebar nav item: accent bar slides in on the active item. */
+.nav-item {
+  position: relative;
+  transition: background-color 0.15s ease, color 0.15s ease, padding-left 0.15s ease;
+}
+.nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* ── Form controls: one consistent look in light and dark ───────────────────
+   Inputs, selects and text areas share a visible focus ring, a custom select
+   arrow (the browser's native one disappears or clashes in dark mode),
+   readable placeholders and dark-aware autofill. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  /* Defaults for fields that don't set their own colours (without these, dark
+     mode shows the browser's flat grey). Any bg-/text- class still wins. */
+  background-color: var(--surface-2);
+  color: var(--fg);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus),
+textarea:hover:not(:disabled):not(:focus) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+[aria-invalid="true"]:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-faint);
+  opacity: 0.9;
+}
+/* `:not([multiple])` raises the specificity just enough that a Tailwind px-* class can't
+   squeeze the arrow into the text (it did, on small selects like the role picker). */
+select:not([multiple]) {
+  padding-right: 2rem;
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23908da8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 14px;
+}
+select option {
+  background: var(--surface);
+  color: var(--fg);
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+/* Browsers paint autofilled fields pale yellow/blue, which looks broken on dark. */
+input:-webkit-autofill,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--fg);
+  box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  caret-color: var(--fg);
+}
+
+/* Edge/IE draw their own "reveal password" eye inside password fields, which
+   showed up as a second eye next to ours. Hide theirs; ours is the one that
+   works the same in every browser. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 h1, h2, h3 {

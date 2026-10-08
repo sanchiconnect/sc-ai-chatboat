@@ -42,12 +42,24 @@ function ApiKeysSection({ workspaceId }: { workspaceId: string }) {
 
   return (
     <section className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5 max-w-2xl space-y-3">
-      <h2 className="text-[16px] font-semibold">API keys</h2>
-      <p className="text-[12.5px] text-fg-muted">
-        Let your own software, or an AI assistant such as Claude, read this workspace&apos;s conversations and leads and ask
-        your assistants questions. REST: <code>{apiBase}/api/v1/bots</code> &middot; MCP server: <code>{apiBase}/mcp</code>.
-        Send the key as <code>Authorization: Bearer &lt;key&gt;</code>.
+      <h2 className="font-display text-[18px] font-semibold">API keys</h2>
+      <p className="text-[13px] text-fg">
+        An API key is a password for <strong>other software</strong> — not for people. You only need one if you want
+        something outside this dashboard to use your assistants.
       </p>
+      <ul className="text-[12.5px] text-fg-muted list-disc ml-5 space-y-1">
+        <li>Pull your conversations and leads into your own system or spreadsheet.</li>
+        <li>Ask your assistant a question from your own app or website backend.</li>
+        <li>Connect an AI assistant such as Claude to your workspace.</li>
+      </ul>
+      <details className="text-[12.5px] text-fg-muted">
+        <summary className="cursor-pointer font-medium text-fg">Developer details</summary>
+        <p className="mt-2">
+          REST: <code>{apiBase}/api/v1/bots</code> &middot; MCP server: <code>{apiBase}/mcp</code>. Send the key as{" "}
+          <code>Authorization: Bearer &lt;key&gt;</code>.
+        </p>
+      </details>
+      <p className="text-[12px] text-fg-faint">Not using any of this? You can leave this empty — nothing else depends on it.</p>
       {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3">{error}</div>}
       {fresh && (
         <div className="text-[13px] bg-warning-soft text-warning rounded-lg p-3 space-y-1" role="status">
@@ -56,7 +68,7 @@ function ApiKeysSection({ workspaceId }: { workspaceId: string }) {
           <button type="button" className="text-[12px] font-semibold underline" onClick={() => setFresh(null)}>I&apos;ve saved it</button>
         </div>
       )}
-      <form onSubmit={create} className="flex gap-2">
+      <form onSubmit={create} className="flex flex-col sm:flex-row gap-2">
         <input
           required maxLength={100} aria-label="Key name" placeholder="Name, e.g. Support dashboard"
           className="flex-1 border border-border bg-surface-2 rounded-lg px-3 py-2 text-[13px]"
@@ -141,13 +153,14 @@ export default function WorkspaceSettingsPage() {
       <main className="min-w-0">
         <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">
           <div>
-            <h1 className="text-[22px] font-semibold font-display">Workspace settings</h1>
+            <h1 className="text-[26px] font-semibold font-display">Workspace settings</h1>
             <p className="text-[13px] text-fg-muted mt-0.5">Your role: {role ?? "…"}</p>
           </div>
           <ProfileMenu email={email} />
         </div>
 
-        <form onSubmit={saveName} className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg space-y-3">
+        <form onSubmit={saveName} className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg">
+          <fieldset disabled={saving} className="m-0 min-w-0 space-y-3 border-0 p-0">
           {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3">{error}</div>}
           {notice && <div className="text-[13px] text-success bg-success-soft rounded-lg p-3">{notice}</div>}
           <div>
@@ -172,6 +185,7 @@ export default function WorkspaceSettingsPage() {
               {saving ? "Saving…" : "Save"}
             </button>
           )}
+          </fieldset>
         </form>
 
         {canEdit && workspaceId && <ApiKeysSection workspaceId={workspaceId} />}

@@ -61,7 +61,7 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <aside className="bg-surface border border-border rounded-2xl p-4 md:sticky md:top-5">
+    <aside className="bg-surface border border-border rounded-2xl shadow-card p-4 md:sticky md:top-5">
       <div className="flex items-center gap-2.5 pb-4 mb-2 border-b border-border">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-accent-ink text-white flex items-center justify-center font-display font-semibold flex-none">
           S
@@ -91,12 +91,13 @@ export function WorkspaceSidebar({
       <div className="text-[11px] uppercase tracking-wide font-semibold text-fg-faint px-2.5 pt-1 pb-1.5">
         Workspace
       </div>
-      <nav className="flex flex-col gap-0.5">
+      <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 [&>a]:whitespace-nowrap">
         {NAV.map((n) => (
           <Link
             key={n.href}
             href={n.href}
-            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] font-medium ${
+            aria-current={active === n.href ? "page" : undefined}
+            className={`nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] font-medium ${
               active === n.href ? "bg-accent-soft text-accent-ink" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
             }`}
           >

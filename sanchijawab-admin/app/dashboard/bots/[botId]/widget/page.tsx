@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError, type WidgetTrigger } from "@/lib/api";
+import { WidgetPreview } from "@/components/WidgetPreview";
 
 const PRESET_COLORS = ["#3D46C9", "#059669", "#DC2626", "#111827"];
 
@@ -83,8 +84,9 @@ export default function WidgetSettingsPage() {
   if (loading) return <p className="text-fg-muted">Loading…</p>;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
-      <form onSubmit={save} className="space-y-5">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] gap-8 max-w-5xl">
+      <form onSubmit={save}>
+      <fieldset disabled={saving} className="m-0 min-w-0 space-y-5 border-0 p-0">
         <h2 className="text-lg font-bold">Widget</h2>
         <p className="text-sm text-fg-muted -mt-3">
           Takes effect immediately on any site with the widget installed — no re-embedding needed.
@@ -399,28 +401,17 @@ export default function WidgetSettingsPage() {
         >
           {saving ? "Saving…" : saved ? "Saved!" : "Save changes"}
         </button>
+      </fieldset>
       </form>
 
-      <div>
-        <p className="text-sm font-medium mb-2">Preview</p>
-        <div className="bg-surface-2 rounded-xl h-80 relative overflow-hidden border border-border">
-          <div
-            className="absolute w-64 bg-surface rounded-lg shadow-lg overflow-hidden"
-            style={{
-              bottom: `${Math.min(offsetY, 200)}px`,
-              [position === "left" ? "left" : "right"]: `${Math.min(offsetX, 200)}px`,
-            }}
-          >
-            <div className="px-4 py-3 text-white font-semibold text-sm" style={{ background: color }}>
-              {header || "Chat with us"}
-            </div>
-            <div className="p-3">
-              <div className="bg-surface-2 rounded-lg px-3 py-2 text-sm inline-block">
-                {welcome || "Hi! Ask me anything."}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="md:sticky md:top-5 self-start">
+        <p className="text-sm font-medium mb-2">Live preview</p>
+        <WidgetPreview
+          color={color} theme={theme} position={position} header={header} welcome={welcome}
+          starters={starterQuestions.split("\n").map((q) => q.trim()).filter(Boolean)}
+          offsetX={offsetX} offsetY={offsetY} showSources={showSources}
+        />
+        <p className="mt-2 text-[12px] text-fg-faint">Updates as you type. Save to publish it to your website.</p>
       </div>
     </div>
   );

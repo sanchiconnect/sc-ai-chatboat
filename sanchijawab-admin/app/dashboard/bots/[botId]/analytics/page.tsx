@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { AddAnswerForm } from "@/components/AddAnswerForm";
+import { useLive } from "@/lib/use-live";
 
 type Summary = {
   days: number;
@@ -47,6 +48,13 @@ export default function AnalyticsPage() {
   }
 
   useEffect(load, [botId, days]);
+
+  // Numbers move as visitors chat, without a refresh (quietly: no loading flash).
+  useLive(() => {
+    Promise.all([api.getAnalyticsSummary(botId, days), api.getUnanswered(botId, days), api.getCrawlSuccess(botId, days)])
+      .then(([s, u, c]) => { setSummary(s); setUnanswered(u); setCrawlSuccess(c); })
+      .catch(() => {});
+  }, 15_000, [botId, days]);
 
   return (
     <div>

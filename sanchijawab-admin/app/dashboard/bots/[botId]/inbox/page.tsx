@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { AddAnswerForm } from "@/components/AddAnswerForm";
+import { pingNotifications, useLive } from "@/lib/use-live";
 
 type ConversationSummary = {
   conversation_id: string;
@@ -70,6 +71,12 @@ export default function InboxPage() {
 
   useEffect(loadList, [botId, status]);
 
+  // New handoffs and visitor messages appear on their own, no refresh needed.
+  useLive(() => {
+    api.listConversations(botId, status || undefined).then(setConversations).catch(() => {});
+    if (selectedId) api.getConversation(selectedId).then(setDetail).catch(() => {});
+  }, 5_000, [botId, status, selectedId]);
+
   function loadDetail(id: string) {
     setSelectedId(id);
     api
@@ -101,6 +108,7 @@ export default function InboxPage() {
       setReply("");
       loadDetail(selectedId);
       loadList();
+      pingNotifications(); // picking it up clears its "needs a human" alert
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to send reply");
     } finally {
@@ -113,6 +121,7 @@ export default function InboxPage() {
     await api.closeConversation(selectedId);
     loadDetail(selectedId);
     loadList();
+    pingNotifications();
   }
 
   return (

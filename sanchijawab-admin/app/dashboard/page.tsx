@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { NotificationBell } from "@/components/NotificationBell";
+import { useLive } from "@/lib/use-live";
 import { resolveWorkspace } from "@/lib/workspace-store";
 
 interface Workspace {
@@ -17,6 +17,14 @@ interface Bot {
   bot_id: string;
   name: string;
   created_at: string;
+}
+
+// A stable colour per bot (same name, same colour) so cards are easy to tell
+// apart at a glance. Lightness is fixed so white text always stays readable.
+function botGradient(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `linear-gradient(135deg, hsl(${h} 62% 44%), hsl(${(h + 35) % 360} 62% 34%))`;
 }
 
 export default function DashboardOverview() {
@@ -56,6 +64,11 @@ export default function DashboardOverview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // New/deleted bots (e.g. by a teammate) show up without a refresh.
+  useLive(() => {
+    if (workspace) api.listBots(workspace.workspace_id).then(setBots).catch(() => {});
+  }, 10_000, [workspace?.workspace_id]);
+
   async function createBot(e: React.FormEvent) {
     e.preventDefault();
     if (!workspace || !newBotName.trim()) return;
@@ -94,18 +107,32 @@ export default function DashboardOverview() {
       />
 
       <main className="min-w-0">
-        <div className="flex justify-between items-center mb-5 gap-4 flex-wrap">
-          <div>
-            <h1 className="text-[22px] font-semibold font-display">Your bots</h1>
-            <p className="text-[13px] text-fg-muted mt-0.5">
-              {bots.length} bot{bots.length === 1 ? "" : "s"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <NotificationBell />
-            <ProfileMenu email={email} />
-          </div>
+        <div className="flex justify-end items-center mb-4 gap-2">
+          <ProfileMenu email={email} />
         </div>
+
+        <section className="relative overflow-hidden rounded-2xl p-6 sm:p-8 mb-6 text-white shadow-card bg-gradient-to-br from-[#3d46c9] via-[#4a3fb8] to-[#2c33a0]">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+          <div aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-24 h-48 w-48 rounded-full bg-[#ff8259]/25 blur-3xl" />
+          <p className="relative text-[12px] font-semibold uppercase tracking-widest text-white/75">
+            {workspace?.name ?? "Your workspace"}
+          </p>
+          <h1 className="relative mt-1 text-[28px] sm:text-[32px] font-semibold font-display leading-tight">Your bots</h1>
+          <p className="relative mt-1.5 max-w-xl text-[14px] text-white/85">
+            {bots.length === 0
+              ? "Create your first assistant, teach it from your website, and put it on your site in minutes."
+              : `${bots.length} assistant${bots.length === 1 ? "" : "s"} answering your visitors. Open one to train it, check conversations or install it.`}
+          </p>
+          {!showForm && !loading && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="relative mt-4 inline-flex items-center gap-2 rounded-btn bg-white px-4 py-2 text-[13px] font-semibold text-[#2c33a0] shadow-card transition-all hover:brightness-95 active:scale-[0.98]"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
+              New bot
+            </button>
+          )}
+        </section>
 
         {loading && <p className="text-fg-muted text-sm">Loading…</p>}
         {error && <p className="text-danger text-sm bg-danger-soft rounded-lg p-3 mb-4">{error}</p>}
@@ -116,8 +143,9 @@ export default function DashboardOverview() {
               <a
                 key={b.bot_id}
                 href={`/dashboard/bots/${b.bot_id}/settings`}
-                className="relative bg-surface border border-border rounded-2xl shadow-card p-4 flex flex-col gap-2.5 hover:border-accent"
+                className="lift group relative overflow-hidden bg-surface border border-border rounded-2xl shadow-card p-4 pt-5 flex flex-col gap-3 hover:shadow-lg"
               >
+                <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5" style={{ background: botGradient(b.name) }} />
                 <button
                   onClick={(e) => deleteBot(e, b.bot_id)}
                   disabled={deletingId === b.bot_id}
@@ -130,16 +158,22 @@ export default function DashboardOverview() {
                   </svg>
                 </button>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-[10px] bg-accent text-white flex items-center justify-center font-bold">
+                  <div
+                    className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold shadow-card flex-none"
+                    style={{ background: botGradient(b.name) }}
+                  >
                     {b.name.slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-[14px] truncate pr-5">{b.name}</div>
+                    <div className="font-semibold text-[14.5px] truncate pr-5">{b.name}</div>
                     <div className="text-[11.5px] text-fg-faint">
                       Created {new Date(b.created_at).toLocaleDateString()}
                     </div>
                   </div>
                 </div>
+                <span className="text-[12.5px] font-semibold text-accent-ink transition-transform group-hover:translate-x-0.5">
+                  Open assistant →
+                </span>
               </a>
             ))}
 

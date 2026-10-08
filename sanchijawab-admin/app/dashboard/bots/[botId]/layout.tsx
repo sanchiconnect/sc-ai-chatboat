@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { NotificationBell } from "@/components/NotificationBell";
 
 const TABS = [
   {
@@ -131,15 +130,15 @@ export default function BotLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="max-w-[1240px] mx-auto grid grid-cols-1 md:grid-cols-[248px_1fr] gap-5 items-start">
-      <aside className="bg-surface border border-border rounded-2xl p-4 md:sticky md:top-5">
-        <Link href="/dashboard" className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted mb-3">
+      <aside className="bg-surface border border-border rounded-2xl shadow-card p-4 md:sticky md:top-5">
+        <Link href="/dashboard" className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted hover:text-fg transition-colors mb-3">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
             <path d="M15 18l-6-6 6-6" />
           </svg>
           All bots
         </Link>
         <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-surface-2 border border-border mb-3">
-          <div className="w-[34px] h-[34px] rounded-lg bg-accent text-white flex items-center justify-center font-bold text-sm flex-none">
+          <div className="w-[34px] h-[34px] rounded-lg bg-gradient-to-br from-accent to-accent-ink text-white shadow-card flex items-center justify-center font-bold text-sm flex-none">
             {(botName || "?").slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -149,7 +148,7 @@ export default function BotLayout({ children }: { children: React.ReactNode }) {
         <div className="text-[11px] uppercase tracking-wide font-semibold text-fg-faint px-2.5 pt-2 pb-1.5">
           Bot
         </div>
-        <nav className="flex flex-col gap-0.5">
+        <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 [&>a]:whitespace-nowrap">
           {TABS.map((t) => {
             const href = `/dashboard/bots/${botId}/${t.href}`;
             const active = pathname === href;
@@ -157,7 +156,8 @@ export default function BotLayout({ children }: { children: React.ReactNode }) {
               <Link
                 key={t.href}
                 href={href}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] font-medium ${
+                aria-current={active ? "page" : undefined}
+                className={`nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] font-medium ${
                   active ? "bg-accent-soft text-accent-ink" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
                 }`}
               >
@@ -171,10 +171,11 @@ export default function BotLayout({ children }: { children: React.ReactNode }) {
 
       <main className="min-w-0">
         <div className="flex justify-end items-center gap-2 mb-3">
-          <NotificationBell />
           <ProfileMenu email={email} />
         </div>
-        {children}
+        <div key={pathname} className="page-enter">
+          {children}
+        </div>
       </main>
     </div>
   );

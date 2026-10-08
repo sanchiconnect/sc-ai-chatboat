@@ -16,6 +16,7 @@ export default function BotSettingsPage() {
   const [avatarId, setAvatarId] = useState("orbit");
   const [avatarName, setAvatarName] = useState("");
   const [retentionDays, setRetentionDays] = useState("");
+  const [webFallback, setWebFallback] = useState(true);
   const [visitorId, setVisitorId] = useState("");
   const [privacyMsg, setPrivacyMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,7 @@ export default function BotSettingsPage() {
         setAvatarId(bot.avatar_id || "orbit");
         setAvatarName(bot.avatar_name || "");
         setRetentionDays(bot.retention_days ? String(bot.retention_days) : "");
+        setWebFallback(bot.web_fallback ?? true);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load bot"))
       .finally(() => setLoading(false));
@@ -55,6 +57,7 @@ export default function BotSettingsPage() {
         name, persona, instructions, allowed_domains, model_tier: modelTier,
         avatar_id: avatarId, avatar_name: avatarName, handoff_keywords: handoffKeywords,
         retention_days: Number(retentionDays) > 0 ? Math.floor(Number(retentionDays)) : 0,
+        web_fallback: webFallback,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -95,7 +98,8 @@ export default function BotSettingsPage() {
 
   return (
     <div className="max-w-2xl space-y-10">
-    <form onSubmit={save} className="space-y-5">
+    <form onSubmit={save}>
+      <fieldset disabled={saving} className="m-0 min-w-0 space-y-5 border-0 p-0">
       <h2 className="text-lg font-bold">Bot settings</h2>
       <p className="text-sm text-fg-muted -mt-3">
         Persona and instructions change how the bot actually answers — they&apos;re sent to the model on every question.
@@ -139,6 +143,20 @@ export default function BotSettingsPage() {
           onChange={(e) => setAvatarName(e.target.value)}
           maxLength={100}
         />
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" className="mt-0.5" checked={webFallback} onChange={(e) => setWebFallback(e.target.checked)} />
+          <span>
+            <span className="block text-sm font-medium">Look online when my own information has no answer</span>
+            <span className="mt-0.5 block text-xs text-fg-muted">
+              The assistant always checks your website, uploaded files and Q&amp;A first. Only if none of them answer, it
+              searches Google and says clearly that the answer came from the web. Turn this off if the assistant must
+              only ever answer from your own content.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div>
@@ -230,6 +248,7 @@ export default function BotSettingsPage() {
       >
         {saving ? "Saving…" : saved ? "Saved!" : "Save changes"}
       </button>
+      </fieldset>
     </form>
 
     <section className="space-y-3 border-t border-border pt-6">

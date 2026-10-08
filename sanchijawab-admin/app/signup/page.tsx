@@ -31,7 +31,8 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg">
-      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
+      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm">
+      <fieldset disabled={loading} className="m-0 min-w-0 space-y-4 border-0 p-0">
         <h1 className="text-xl font-bold">Create your account</h1>
         <p className="text-sm text-fg-muted">Free for 14 days. No card needed.</p>
 
@@ -79,6 +80,7 @@ export default function SignupPage() {
             Log in
           </Link>
         </p>
+      </fieldset>
       </form>
     </div>
   );

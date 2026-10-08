@@ -36,6 +36,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return resp.json();
 }
 
+export interface WorkspaceBillingDetails {
+  name: string; gstin: string; address: string; city: string; state: string; country: string;
+  pincode: string; phone_country_code: string; phone: string;
+}
+
 export interface WidgetTrigger {
   id: string; type: "time" | "scroll" | "exit" | "visits"; value: number; message: string; page_pattern: string;
   variant?: "" | "A" | "B";
@@ -262,7 +267,7 @@ export const api = {
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
       crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
-      slack_webhook_url: string; retention_days: number | null;
+      slack_webhook_url: string; retention_days: number | null; web_fallback: boolean;
     }>(`/v1/bots/${botId}`),
 
   installCheck: (botId: string) =>
@@ -275,22 +280,22 @@ export const api = {
     body: Partial<{
       name: string; persona: string; instructions: string; model_tier: string; allowed_domains: string[];
       avatar_id: string; avatar_name: string; crm_webhook_url: string; handoff_keywords: string;
-      business_hours: BusinessHours; slack_webhook_url: string; retention_days: number;
+      business_hours: BusinessHours; slack_webhook_url: string; retention_days: number; web_fallback: boolean;
     }>,
   ) =>
     request<{
       bot_id: string; name: string; persona: string; instructions: string;
       model_tier: string; allowed_domains: string[]; avatar_id: string; avatar_name: string;
       crm_webhook_url: string; handoff_keywords: string; business_hours: BusinessHours;
-      slack_webhook_url: string; retention_days: number | null;
+      slack_webhook_url: string; retention_days: number | null; web_fallback: boolean;
     }>(`/v1/bots/${botId}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   listNotifications: (unreadOnly = false) =>
     request<{
       unread_count: number;
       notifications: {
-        notification_id: string; bot_id: string; conversation_id: string; kind: string;
-        message: string; read: boolean; created_at: string;
+        notification_id: string; bot_id: string | null; conversation_id: string | null; kind: string;
+        message: string; link?: string; read: boolean; created_at: string;
       }[];
     }>(`/v1/notifications${unreadOnly ? "?unread_only=true" : ""}`),
 
@@ -570,6 +575,8 @@ export const api = {
       customer_state?: string;
       customer_country?: string;
       customer_pincode?: string;
+      customer_phone_country_code?: string;
+      customer_phone?: string;
       success_url?: string;
       cancel_url?: string;
     },
@@ -584,6 +591,24 @@ export const api = {
   confirmOrder: (orderId: string) =>
     request<{ order_id: string; status: string; invoice_number: string }>(`/v1/orders/${orderId}/confirm`, {
       method: "POST",
+    }),
+
+  // Tells the server the buyer closed the payment window or the gateway
+  // reported a failure, so the order history shows it instead of "created".
+  recordOrderOutcome: (orderId: string, status: "cancelled" | "failed") =>
+    request<{ order_id: string; status: string }>(`/v1/orders/${orderId}/outcome`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
+
+  // The workspace's own company/GST/address details — owners and admins only.
+  getBillingDetails: (workspaceId: string) =>
+    request<WorkspaceBillingDetails>(`/v1/workspaces/${workspaceId}/billing-details`),
+
+  saveBillingDetails: (workspaceId: string, body: WorkspaceBillingDetails) =>
+    request<WorkspaceBillingDetails>(`/v1/workspaces/${workspaceId}/billing-details`, {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
 
   listOrders: (workspaceId: string) =>

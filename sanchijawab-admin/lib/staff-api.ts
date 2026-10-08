@@ -99,7 +99,51 @@ export interface StaffWorkspaceDetail {
   members: StaffWorkspaceMember[];
 }
 
+export interface StaffPlan {
+  plan_id: string; name: string; price_text: string; tagline: string; features: string[];
+  is_active: boolean; sort_order: number; amount: number | null; currency: string; purchasable: boolean;
+  limits: Record<string, number | null>;
+}
+
+export type StaffPlanInput = Partial<{
+  name: string; price_text: string; tagline: string; features: string[]; is_active: boolean;
+  sort_order: number; amount: number | null; clear_amount: boolean; currency: string;
+  limits: Record<string, number | null>;
+}>;
+
+export interface StaffGateway {
+  code: string; name: string; is_primary: boolean; enabled: boolean;
+  test_client_id: string; test_configured: boolean; live_client_id: string; live_configured: boolean;
+}
+
+export interface StaffBillingProfile {
+  supplier_name: string; supplier_gstin: string; supplier_address: string; supplier_city: string;
+  supplier_state: string; supplier_country: string; supplier_pincode: string; supplier_email: string; supplier_phone: string;
+}
+
 export const staffApi = {
+  listPlans: () => request<StaffPlan[]>("/v1/plans"),
+
+  createPlan: (body: StaffPlanInput & { name: string }) =>
+    request<StaffPlan>("/v1/plans", { method: "POST", body: JSON.stringify(body) }),
+
+  updatePlan: (planId: string, body: StaffPlanInput) =>
+    request<StaffPlan>(`/v1/plans/${planId}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deletePlan: (planId: string) => request<{ deleted: boolean }>(`/v1/plans/${planId}`, { method: "DELETE" }),
+
+  listGateways: () => request<StaffGateway[]>("/v1/billing/gateways"),
+
+  updateGateway: (
+    code: string,
+    body: Partial<{ test_client_id: string; test_client_secret: string; live_client_id: string; live_client_secret: string; is_primary: boolean; enabled: boolean }>,
+  ) => request<StaffGateway>(`/v1/billing/gateways/${code}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  getBillingProfile: () => request<StaffBillingProfile>("/v1/billing/profile"),
+
+  updateBillingProfile: (body: StaffBillingProfile) =>
+    request<StaffBillingProfile>("/v1/billing/profile", { method: "PUT", body: JSON.stringify(body) }),
+
   login: (email: string, password: string) =>
     request<{ access_token: string }>("/v1/staff/login", {
       method: "POST",
@@ -113,7 +157,28 @@ export const staffApi = {
   putSetting: (key: string, value: string) =>
     request<StaffSetting[]>(`/v1/staff/settings/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
 
-  auditLog: (limit = 100) => request<StaffAuditEntry[]>(`/v1/staff/audit-log?limit=${limit}`),
+  auditLog: (limit = 100, offset = 0) =>
+    request<StaffAuditEntry[]>(`/v1/staff/audit-log?limit=${limit}&offset=${offset}`),
+
+  // The CSV needs the staff token in a header, which a plain link can't send,
+  // so fetch it and hand the browser a blob to save.
+  downloadAuditLog: async (days: number) => {
+    const resp = await fetch(`${API_URL}/v1/staff/audit-log/export?days=${days}`, {
+      headers: { Authorization: `Bearer ${getStaffToken() ?? ""}` },
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new StaffApiError(resp.status, body.detail || `Download failed (${resp.status})`);
+    }
+    const url = URL.createObjectURL(await resp.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `activity-log-last-${days}-days.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   listContent: () => request<StaffContentItem[]>("/v1/content"),
 

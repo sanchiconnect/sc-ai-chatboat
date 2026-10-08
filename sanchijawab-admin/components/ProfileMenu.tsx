@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearToken } from "@/lib/api";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 
 function initialsFor(email: string | null): string {
   if (!email) return "?";
@@ -26,6 +27,7 @@ export function ProfileMenu({ email }: { email: string | null }) {
 
   return (
     <div className="flex items-center gap-2">
+      <NotificationBell />
       <ThemeToggle />
       <div className="relative" ref={ref}>
         <button
@@ -63,7 +65,8 @@ export function ProfileMenu({ email }: { email: string | null }) {
               onClick={() => {
                 setOpen(false);
                 clearToken();
-                window.location.href = process.env.NEXT_PUBLIC_MARKETING_URL ?? "/login";
+                // Back to the sign-in page, not the marketing site.
+                window.location.href = "/login";
               }}
               className="w-full text-left px-2.5 py-2 rounded-lg text-sm text-danger hover:bg-surface-2"
             >

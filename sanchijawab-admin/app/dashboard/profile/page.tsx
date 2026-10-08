@@ -6,6 +6,9 @@ import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { PasswordInput } from "@/components/PasswordInput";
 import { resolveWorkspace } from "@/lib/workspace-store";
+import { useLive } from "@/lib/use-live";
+
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", agent: "Agent", viewer: "Viewer" };
 
 export default function ProfilePage() {
   const [workspaceName, setWorkspaceName] = useState("…");
@@ -13,6 +16,15 @@ export default function ProfilePage() {
   const [workspaces, setWorkspaces] = useState<{ workspace_id: string; name: string }[]>([]);
   const [email, setEmail] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+
+  // If an admin changes this person's role, it updates here without a refresh.
+  useLive(() => {
+    api.listWorkspaces().then((list) => {
+      const ws = resolveWorkspace(list);
+      if (ws) setRole(ws.role);
+    }).catch(() => {});
+  }, 10_000);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -34,6 +46,7 @@ export default function ProfilePage() {
       if (!ws) return;
       setWorkspaceName(ws.name);
       setWorkspaceId(ws.workspace_id);
+      setRole(ws.role);
 
       const members = await api.listMembers(ws.workspace_id).catch(() => []);
       const mine = members.find((member) => member.email === m.email);
@@ -97,7 +110,10 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-[13px] text-fg-muted">Role</span>
-            <span className="text-[13px] font-medium">{isSuperAdmin ? "Super admin" : "Member"}</span>
+            <span className="text-[13px] font-medium">
+              {role ? ROLE_LABEL[role] ?? role : "…"}
+              {isSuperAdmin && <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-ink">Platform super admin</span>}
+            </span>
           </div>
         </div>
 
@@ -118,7 +134,8 @@ export default function ProfilePage() {
           </label>
         </div>
 
-        <form onSubmit={submitPasswordChange} className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg space-y-3">
+        <form onSubmit={submitPasswordChange} className="bg-surface border border-border rounded-2xl shadow-card p-5 max-w-lg">
+          <fieldset disabled={saving} className="m-0 min-w-0 space-y-3 border-0 p-0">
           <h3 className="font-display text-[16px] font-semibold">Change password</h3>
           {error && <div className="text-[13px] text-danger bg-danger-soft rounded-lg p-3">{error}</div>}
           {notice && <div className="text-[13px] text-success bg-success-soft rounded-lg p-3">{notice}</div>}
@@ -152,6 +169,7 @@ export default function ProfilePage() {
           >
             {saving ? "Saving…" : "Update password"}
           </button>
+          </fieldset>
         </form>
       </main>
     </div>

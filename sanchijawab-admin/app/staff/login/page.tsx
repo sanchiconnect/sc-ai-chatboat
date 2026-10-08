@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { staffApi, setStaffToken, StaffApiError } from "@/lib/staff-api";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function StaffLoginPage() {
   const router = useRouter();
@@ -28,11 +29,12 @@ export default function StaffLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg relative">
+    <div className="min-h-screen flex items-center justify-center bg-bg app-backdrop relative px-4 py-10">
       <div className="absolute top-5 right-5">
         <ThemeToggle />
       </div>
-      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
+      <form onSubmit={onSubmit} className="page-enter bg-surface text-fg border border-border rounded-2xl shadow-card p-6 sm:p-8 w-full max-w-sm">
+        <fieldset disabled={loading} className="m-0 min-w-0 space-y-4 border-0 p-0">
         <div className="flex items-center gap-2.5 pb-1">
           <div className="w-8 h-8 rounded-lg bg-fg text-bg flex items-center justify-center font-display font-semibold text-sm flex-none">
             S
@@ -59,12 +61,10 @@ export default function StaffLoginPage() {
         </div>
         <div>
           <label htmlFor="staff-password" className="text-sm font-medium">Password</label>
-          <input
+          <PasswordInput
             id="staff-password"
-            className="mt-1 w-full border border-border bg-surface text-fg rounded-lg px-3 py-2"
-            type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
             autoComplete="current-password"
             required
           />
@@ -82,6 +82,7 @@ export default function StaffLoginPage() {
           This is a separate login from the customer dashboard. Only accounts with
           platform staff access can sign in here.
         </p>
+        </fieldset>
       </form>
     </div>
   );

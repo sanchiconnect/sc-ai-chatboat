@@ -30,7 +30,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg">
-      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm space-y-4">
+      <form onSubmit={onSubmit} className="bg-surface text-fg border border-border rounded-xl shadow-card p-8 w-full max-w-sm">
+      <fieldset disabled={loading} className="m-0 min-w-0 space-y-4 border-0 p-0">
         <h1 className="text-xl font-bold">Log in</h1>
 
         {error && <div className="text-sm text-danger bg-danger-soft rounded p-2">{error}</div>}
@@ -65,6 +66,7 @@ export default function LoginPage() {
             Sign up
           </Link>
         </p>
+      </fieldset>
       </form>
     </div>
   );

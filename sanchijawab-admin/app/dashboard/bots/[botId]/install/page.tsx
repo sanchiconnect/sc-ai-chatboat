@@ -113,8 +113,8 @@ export default function InstallPage() {
 
   return (
     <div className="max-w-2xl">
-      <h2 className="text-lg font-bold mb-4">Put the bot on your website</h2>
-      <p className="text-sm text-fg-muted mb-4">
+      <h2 className="font-display text-2xl font-semibold mb-1.5">Put the bot on your website</h2>
+      <p className="text-sm text-fg-muted mb-5">
         Paste this just before the closing <code>&lt;/body&gt;</code> tag on every page.
       </p>
 
@@ -122,7 +122,7 @@ export default function InstallPage() {
         tabIndex={0}
         role="region"
         aria-label="Install snippet"
-        className="bg-gray-900 text-gray-100 text-sm rounded-lg p-4 overflow-x-auto"
+        className="bg-[#14122a] text-gray-100 text-sm rounded-xl2 border border-border shadow-card p-5 overflow-x-auto"
       >
         {snippet}
       </pre>
@@ -133,7 +133,7 @@ export default function InstallPage() {
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
-        className="mt-3 bg-accent text-white rounded-lg px-4 py-2 font-medium"
+        className="mt-3 bg-accent text-white rounded-btn px-4 py-2 font-semibold shadow-card hover:brightness-90 active:scale-[0.98] transition-all"
       >
         {copied ? "Copied!" : "Copy code"}
       </button>
@@ -145,14 +145,14 @@ export default function InstallPage() {
           tabIndex={0}
           role="region"
           aria-label="One-line install snippet"
-          className="mt-2 bg-gray-900 text-gray-100 text-sm rounded-lg p-4 overflow-x-auto"
+          className="mt-2 bg-[#14122a] text-gray-100 text-sm rounded-xl2 border border-border p-4 overflow-x-auto"
         >
           {simpleSnippet}
         </pre>
       </details>
 
       <div className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5">
-        <h3 className="text-[15px] font-semibold text-fg mb-1">Install on your platform</h3>
+        <h3 className="font-display text-lg font-semibold text-fg mb-1">Install on your platform</h3>
         <p className="text-[13px] text-fg-muted mb-3">
           The code above goes on every page. Here is where to put it on common website builders.
         </p>
@@ -172,7 +172,7 @@ export default function InstallPage() {
       </div>
 
       <div className="mt-8 bg-surface border border-border rounded-2xl shadow-card p-5">
-        <h3 className="text-[15px] font-semibold text-fg mb-1">Is it actually live?</h3>
+        <h3 className="font-display text-lg font-semibold text-fg mb-1">Is it actually live?</h3>
         <p className="text-[13px] text-fg-muted mb-3">
           We can&apos;t reach into your site to check — this looks for real evidence the script tag has
           loaded: the widget calling home for its config.
@@ -181,7 +181,7 @@ export default function InstallPage() {
         <button
           onClick={checkInstall}
           disabled={checking}
-          className="bg-accent text-white rounded-lg px-4 py-2 text-[13px] font-semibold disabled:opacity-50"
+          className="bg-accent text-white rounded-btn px-4 py-2 text-[13px] font-semibold shadow-card hover:brightness-90 active:scale-[0.98] transition-all disabled:opacity-50"
         >
           {checking ? "Checking…" : "Check installation"}
         </button>

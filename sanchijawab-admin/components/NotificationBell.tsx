@@ -3,18 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useLive } from "@/lib/use-live";
 
 type NotificationItem = {
   notification_id: string;
-  bot_id: string;
-  conversation_id: string;
+  bot_id: string | null;
+  conversation_id: string | null;
   kind: string;
   message: string;
+  link?: string;
   read: boolean;
   created_at: string;
 };
 
-const POLL_MS = 30_000;
+const POLL_MS = 8_000;
+
+const KIND_LABEL: Record<string, string> = {
+  handoff: "Needs a human", team: "Team", lead: "New lead", payment: "Billing",
+};
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -27,7 +33,7 @@ export function NotificationBell() {
     api
       .listNotifications()
       .then((res) => {
-        setItems(res.notifications);
+        setItems(res.notifications as NotificationItem[]);
         setUnreadCount(res.unread_count);
       })
       .catch(() => {});
@@ -35,9 +41,13 @@ export function NotificationBell() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
+    // Pages ping this after an action so the count changes straight away.
+    window.addEventListener("sj:notifications", load);
+    return () => window.removeEventListener("sj:notifications", load);
   }, []);
+
+  // Count goes up when something happens and down when it's handled, without a refresh.
+  useLive(load, POLL_MS);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -54,7 +64,7 @@ export function NotificationBell() {
       setItems((prev) => prev.map((i) => (i.notification_id === item.notification_id ? { ...i, read: true } : i)));
       setUnreadCount((c) => Math.max(0, c - 1));
     }
-    router.push(`/dashboard/bots/${item.bot_id}/inbox`);
+    router.push(item.link || (item.bot_id ? `/dashboard/bots/${item.bot_id}/inbox` : "/dashboard"));
   }
 
   async function markAllRead() {
@@ -66,24 +76,24 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { setOpen((o) => !o); load(); }}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
-        className="relative w-9 h-9 rounded-full border border-border flex items-center justify-center text-fg-muted hover:bg-surface-2"
+        className="relative w-9 h-9 rounded-full border border-border bg-surface flex items-center justify-center text-fg-muted hover:bg-surface-2 transition-colors"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-danger text-[10px] leading-4 text-[color:var(--on-danger)] text-center font-semibold">
+          <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-danger text-[10px] leading-[17px] text-[color:var(--on-danger)] text-center font-semibold ring-2 ring-[var(--bg)]">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border rounded-xl shadow-card p-1.5 z-50 max-h-96 overflow-y-auto">
+        <div className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] bg-surface border border-border rounded-xl shadow-card p-1.5 z-50 max-h-96 overflow-y-auto">
           <div className="flex items-center justify-between px-2.5 py-1.5">
             <span className="text-xs font-semibold text-fg-faint uppercase tracking-wide">Notifications</span>
             {unreadCount > 0 && (
@@ -101,11 +111,16 @@ export function NotificationBell() {
                 item.read ? "text-fg-muted" : "text-fg font-medium"
               }`}
             >
-              <div className="flex items-center gap-1.5">
-                {!item.read && <span className="w-1.5 h-1.5 rounded-full bg-accent flex-none" />}
-                <span className="truncate">{item.message}</span>
+              <div className="flex items-start gap-1.5">
+                {!item.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-accent flex-none" />}
+                <span className="min-w-0">
+                  <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-fg-faint">
+                    {KIND_LABEL[item.kind] ?? "Update"}
+                  </span>
+                  <span className="block">{item.message}</span>
+                </span>
               </div>
-              <span className="text-[11px] text-fg-faint">{new Date(item.created_at).toLocaleString()}</span>
+              <span className="text-[11px] text-fg-faint">{new Date(item.created_at + "Z").toLocaleString()}</span>
             </button>
           ))}
         </div>
