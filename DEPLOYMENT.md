@@ -71,6 +71,21 @@ addresses), `RATE_LIMIT_ENABLED=false`.
 - [ ] Run the load test and the quality evaluation against the real deployment (below).
 - [ ] Add the repository secret `CLOUD_API_KEY` on GitHub if you want the weekly quality check to run.
 
+## Backups, and checking the setup before launch
+
+```
+powershell -File scripts\backup-db.ps1                  # one backup now (schedule it daily; copy the file off the machine)
+powershell -File scripts\restore-db.ps1 -Drill          # proves a backup restores: backs up, restores into a scratch database, compares, cleans up
+cd sanchijawab-backend; uv run python -m app.preflight  # reads the real .env and database and lists, in plain words, what to fix before launch
+```
+
+`preflight` flags weak secrets, private-address crawling left on, a localhost `FRONTEND_URL`, missing SMTP, payments still in test mode, a public plan called "test" and
+paid plans with no usage limits. Run it on the real server; add `--strict` to make a deployment pipeline fail while anything is left to fix.
+On a managed database use the provider's automated backups, and run the restore drill once against a downloaded dump.
+
+The dashboard sends a Content-Security-Policy in **report-only** mode: the browser console lists anything it would block, nothing breaks.
+After clicking through the live site (sign-up, checkout, chat) with no reports, build with `CSP_ENFORCE=true` (an `.env` / compose value) to enforce it.
+
 ## Checking it works
 
 ```
@@ -88,6 +103,7 @@ per second on document retrieval; answers took 11 s median, 17 s p95 end to end.
 
 - Rate limiting is per backend process. If you run several `api` containers, put a shared limiter (for example at the load
   balancer) in front, or move the limiter to Redis.
-- A Content-Security-Policy header is not set yet; it needs to be written against the real URLs and Razorpay's checkout script.
-- The WordPress, Shopify, Webflow and Google Tag Manager installers are not built. Customers paste the snippet from the
-  dashboard's Install page into any site.
+- The Content-Security-Policy is report-only until you turn on `CSP_ENFORCE=true` after checking checkout on the real site.
+- WordPress has a ready plugin (`integrations/dist/sanchijawab-chat.zip`, build it with `python integrations/build_wordpress_zip.py`);
+  Shopify has an app-embed extension in `integrations/shopify/` that is **untested** (needs a Shopify Partner account); Webflow, Google Tag
+  Manager, Wix and Squarespace need no plugin: the dashboard Install page lists the steps. See `integrations/README.md`.

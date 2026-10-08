@@ -13,9 +13,12 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_WIDGET_URL=http://localhost:5500/widget.js
 ARG NEXT_PUBLIC_MARKETING_URL=http://localhost:3000
+# false = the Content-Security-Policy is report-only (logs, blocks nothing); true = enforced. See next.config.mjs.
+ARG CSP_ENFORCE=false
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_WIDGET_URL=$NEXT_PUBLIC_WIDGET_URL \
     NEXT_PUBLIC_MARKETING_URL=$NEXT_PUBLIC_MARKETING_URL \
+    CSP_ENFORCE=$CSP_ENFORCE \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

@@ -74,6 +74,7 @@ services:
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
         NEXT_PUBLIC_WIDGET_URL: ${PUBLIC_WIDGET_URL:-http://localhost:5500/widget.js}
         NEXT_PUBLIC_MARKETING_URL: ${PUBLIC_SITE_URL:-http://localhost:3000}
+        CSP_ENFORCE: ${CSP_ENFORCE:-false}
     restart: unless-stopped
     depends_on:
       - api
