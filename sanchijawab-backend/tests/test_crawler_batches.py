@@ -103,6 +103,23 @@ async def test_progress_total_follows_what_is_known(fake_site):
     assert seen[0][1] < 5000  # an honest estimate, not just "5000"
 
 
+async def test_stopping_mid_crawl_stops_every_worker(fake_site):
+    saved: list[str] = []
+
+    async def on_page(url, text):
+        saved.append(url)
+
+    async def progress(done, total):
+        if done >= 2:
+            raise RuntimeError("Stop pressed")
+
+    with pytest.raises(RuntimeError):
+        await crawler.crawl_site("https://t.test/", max_pages=50, on_page=on_page, on_progress=progress)
+    kept = len(saved)
+    await asyncio.sleep(0.3)  # any worker left running would keep saving pages here
+    assert len(saved) == kept and kept >= 2
+
+
 async def test_one_slow_page_cannot_stall_the_crawl(fake_site, monkeypatch):
     monkeypatch.setattr(crawler, "PAGE_TIMEOUT_SECONDS", 0.2)
 

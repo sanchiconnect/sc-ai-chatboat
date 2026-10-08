@@ -151,12 +151,14 @@ async def ingest_file_source(session: AsyncSession, source: Source) -> dict:
     not here) — this just fetches, parses, chunks, embeds, stores."""
     stats = {"pages": 0, "chunks": 0, "skipped": 0}
     filename = source.file_key.rsplit("/", 1)[-1]
-    data = storage.download_bytes(source.file_key)
+    # Download and parsing are blocking work; in threads, so the worker stays responsive (Stop, other jobs).
+    data = await asyncio.to_thread(storage.download_bytes, source.file_key)
 
     if extension_of(filename) in TABULAR_EXTENSIONS:
-        pieces = parse_tabular_to_chunks(filename, data)
+        pieces = await asyncio.to_thread(parse_tabular_to_chunks, filename, data)
     else:
-        pieces = chunk_text(parse_to_markdown(filename, data))
+        markdown = await asyncio.to_thread(parse_to_markdown, filename, data)
+        pieces = await asyncio.to_thread(chunk_text, markdown)
 
     doc = (
         await session.execute(

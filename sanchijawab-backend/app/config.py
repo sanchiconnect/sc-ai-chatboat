@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # Crawling
     max_pages_per_site: int = 5000
-    crawl_concurrency: int = 4
+    crawl_concurrency: int = 8  # pages fetched at the same time (1 if a site's robots.txt asks for a delay)
     crawl_delay_seconds: float = 0.2
     render_js: bool = False
 

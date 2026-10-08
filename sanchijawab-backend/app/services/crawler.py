@@ -286,32 +286,31 @@ async def crawl_site(
     """Crawl a site in one of three modes — see module docstring. Returns
     a list of (url, markdown) pairs, up to max_pages long.
 
-    `on_progress`, when given, is awaited as `on_progress(pages_done, pages_total)` after each batch of
-    fetches so a caller can show live progress (SAN-1087, FR-K8). `pages_total` is the best current
-    estimate (pages done + pages still waiting to be fetched), capped at max_pages.
+    `on_progress`, when given, is awaited as `on_progress(pages_done, pages_total)` after every page so a
+    caller can show live progress (SAN-1087, FR-K8). `pages_total` is the best current estimate (pages
+    done + pages still waiting to be fetched), capped at max_pages.
 
     `on_page`, when given, is awaited as `on_page(url, markdown)` the moment a page has been fetched, so
     the caller can store it straight away. That keeps memory flat on big sites, makes a stopped or
     crashed crawl keep what it already read, and lets the assistant start answering from the first pages
     before the last one is done. In that case the returned list is empty.
 
-    Several pages are fetched at the same time (settings.crawl_concurrency). If the site's robots.txt asks
-    for a crawl delay longer than ours, pages are fetched one at a time to respect it.
+    Speed: a pool of settings.crawl_concurrency workers each take the next waiting page the moment they
+    finish one (no waiting for the slowest page of a batch). If the site's robots.txt asks for a crawl
+    delay longer than ours, a single worker is used to respect it.
     """
     include = _pattern_list(include_patterns)
     exclude = _pattern_list(exclude_patterns)
     robots, delay = await _load_robots(seed_url)
     # A site that asks us to slow down gets one request at a time, never a burst.
-    concurrency = 1 if delay > settings.crawl_delay_seconds else max(1, settings.crawl_concurrency)
-
-    async def report(done: int, total: int | None) -> None:
-        if on_progress is not None:
-            await on_progress(done, total)
+    workers = 1 if delay > settings.crawl_delay_seconds else max(1, settings.crawl_concurrency)
 
     if not robots.can_fetch(CRAWLER_USER_AGENT, seed_url):
         raise RobotsDisallowedError(f"robots.txt disallows crawling {seed_url}")
 
     pages: list[tuple[str, str]] = []
+    # Saving a page touches one database session, so saves take turns; fetching does not wait for them.
+    save_lock = asyncio.Lock()
 
     async def keep(url: str, text: str) -> None:
         if on_page is not None:
@@ -319,81 +318,91 @@ async def crawl_site(
         else:
             pages.append((url, text))
 
-    if mode == "single_page":
-        await report(0, 1)
-        async with AsyncWebCrawler() as crawler:
-            text, _ = await _fetch_page_guarded(crawler, seed_url)
-        done = 0
-        if text is not None:
-            await keep(seed_url, text)
-            done = 1
-        await report(done, 1)
-        return pages
-
-    if mode == "sitemap":
-        urls = await _fetch_sitemap_urls(seed_url, max_pages)
-        urls = [u for u in urls if _allowed_by_patterns(u, include, exclude) and robots.can_fetch(CRAWLER_USER_AGENT, u)]
-        if not urls:
-            urls = [seed_url]  # sitemap missing/empty — fall back to at least the seed page
-        urls = urls[:max_pages]
-        await report(0, len(urls))
-        done = 0
-        async with AsyncWebCrawler() as crawler:
-            for start in range(0, len(urls), concurrency):
-                batch = urls[start:start + concurrency]
-                for url, (text, _) in zip(batch, await _fetch_batch(crawler, batch)):
-                    if text is not None:
-                        await keep(url, text)
-                        done += 1
-                await report(done, len(urls))
-                if start + concurrency < len(urls):
-                    await asyncio.sleep(delay)
-        return pages
-
-    # "whole_domain" — breadth-first same-domain crawl from the seed, up to max_pages. Links found on pages
-    # come first (they are the pages the site itself points visitors to); the site's sitemap then fills in
-    # pages nothing links to, so "all pages" really means all pages.
+    frontier: list[str] = []  # pages found by following links (the pages the site itself points visitors to)
+    backlog: list[str] = []   # pages only the sitemap knows about
+    follow_links = mode == "whole_domain"
     site = site_of(seed_url)
     visited: set[str] = {_normalize(seed_url)}
-    frontier: list[str] = [seed_url]
-    backlog: list[str] = []
-    try:
-        sitemap_urls = await asyncio.wait_for(_fetch_sitemap_urls(seed_url, max_pages), timeout=SITEMAP_TIMEOUT_SECONDS)
-    except Exception:
-        sitemap_urls = []
-    for u in sitemap_urls:
-        norm = _normalize(u)
-        if (
-            norm in visited or site_of(u) != site or SKIP_EXT.search(u) or SKIP_PATH.search(u)
-            or not _allowed_by_patterns(u, include, exclude)
-        ):
-            continue
-        visited.add(norm)
-        backlog.append(u)
 
-    done = 0
-    await report(0, min(max_pages, 1 + len(backlog)))
+    if mode == "single_page":
+        frontier, max_pages = [seed_url], 1
+    elif mode == "sitemap":
+        urls = await _fetch_sitemap_urls(seed_url, max_pages)
+        urls = [u for u in urls if _allowed_by_patterns(u, include, exclude) and robots.can_fetch(CRAWLER_USER_AGENT, u)]
+        frontier = (urls or [seed_url])[:max_pages]  # sitemap missing/empty: at least the seed page
+    else:
+        # "whole_domain": breadth-first from the seed; the sitemap then fills in pages nothing links to, so
+        # "all pages" really means all pages.
+        frontier = [seed_url]
+        try:
+            sitemap_urls = await asyncio.wait_for(_fetch_sitemap_urls(seed_url, max_pages), timeout=SITEMAP_TIMEOUT_SECONDS)
+        except Exception:
+            sitemap_urls = []
+        for u in sitemap_urls:
+            norm = _normalize(u)
+            if (
+                norm in visited or site_of(u) != site or SKIP_EXT.search(u) or SKIP_PATH.search(u)
+                or not _allowed_by_patterns(u, include, exclude)
+            ):
+                continue
+            visited.add(norm)
+            backlog.append(u)
 
-    async with AsyncWebCrawler() as crawler:
-        while (frontier or backlog) and done < max_pages:
-            batch: list[str] = []
-            while len(batch) < min(concurrency, max_pages - done) and (frontier or backlog):
-                candidate = frontier.pop(0) if frontier else backlog.pop(0)
-                if robots.can_fetch(CRAWLER_USER_AGENT, candidate):
-                    batch.append(candidate)
-            if not batch:
+    state = {"done": 0, "in_flight": 0}
+
+    def estimate() -> int:
+        return max(1, min(max_pages, state["done"] + state["in_flight"] + len(frontier) + len(backlog)))
+
+    async def report() -> None:
+        if on_progress is not None:
+            await on_progress(state["done"], estimate())
+
+    def next_url() -> str | None:
+        while frontier or backlog:
+            candidate = frontier.pop(0) if frontier else backlog.pop(0)
+            if robots.can_fetch(CRAWLER_USER_AGENT, candidate):
+                return candidate
+        return None
+
+    async def worker(crawler: AsyncWebCrawler) -> None:
+        while state["done"] < max_pages:
+            if state["done"] + state["in_flight"] >= max_pages:
+                # Enough pages are already on their way; only a failed fetch can free a slot.
+                if state["in_flight"] == 0:
+                    return
+                await asyncio.sleep(0.05)
+                continue
+            url = next_url()
+            if url is None:
+                if state["in_flight"] == 0:
+                    return  # nothing waiting and nothing running that could add more
+                await asyncio.sleep(0.05)
                 continue
 
-            for url, (text, result) in zip(batch, await _fetch_batch(crawler, batch)):
-                if text is None or done >= max_pages:
-                    continue
+            state["in_flight"] += 1
+            try:
+                text, result = await _fetch_page_guarded(crawler, url)
+            finally:
+                state["in_flight"] -= 1
+            if text is None or state["done"] >= max_pages:
+                continue
+            async with save_lock:
                 await keep(url, text)
-                done += 1
-                if result is not None and done < max_pages:
+                state["done"] += 1
+                if follow_links and result is not None and state["done"] < max_pages:
                     frontier.extend(_extract_internal_links(result, url, site, visited, include, exclude))
+                await report()
+            await asyncio.sleep(delay)
 
-            await report(done, min(max_pages, done + len(frontier) + len(backlog)))
-            if (frontier or backlog) and done < max_pages:
-                await asyncio.sleep(delay)
-
+    await report()
+    async with AsyncWebCrawler() as crawler:
+        tasks = [asyncio.create_task(worker(crawler)) for _ in range(workers)]
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            # One worker failed or the crawl was stopped: stop the others too instead of leaving them running.
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
     return pages
