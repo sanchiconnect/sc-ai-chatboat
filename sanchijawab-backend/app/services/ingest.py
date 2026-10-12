@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import hashlib
 import logging
-from datetime import datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession

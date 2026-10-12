@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-from datetime import datetime
 
 from sqlalchemy import delete, select
 

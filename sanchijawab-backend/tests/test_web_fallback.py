@@ -6,7 +6,6 @@ from app.db import SessionLocal
 from app.services import llm, rag
 from app.services.rag import GENERIC_DECLINE, _brand_words, _is_decline, _merge_chunks, _without_brand
 
-import pytest
 
 
 def test_decline_detection_catches_common_phrasings():

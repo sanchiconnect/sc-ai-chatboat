@@ -10,7 +10,6 @@ can't be verified live outside a real browser).
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 import httpx
 from sqlalchemy import select, update
@@ -19,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..timeutil import utcnow
 from ..config import settings
 from ..models import Bot, Conversation, Membership, Notification, User
-from .email import send_email, send_notice_email
+from .email import send_notice_email
 from .urlsafety import UnsafeURLError, assert_public_url
 
 logger = logging.getLogger("sanchijawab.notifications")

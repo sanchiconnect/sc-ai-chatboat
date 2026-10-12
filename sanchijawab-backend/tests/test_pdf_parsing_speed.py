@@ -1,7 +1,6 @@
 """Long PDFs with a text layer are read directly (fast); short ones still use docling (keeps tables)."""
 from __future__ import annotations
 
-import pytest
 from playwright.async_api import async_playwright
 
 from app.services import parser

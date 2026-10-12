@@ -76,7 +76,7 @@ def _round_robin(lists: list[list[dict]], limit: int = 10) -> list[dict]:
     """Takes the best of each ranked list in turn (1st of each, then 2nd of each, ...), without repeats."""
     seen: set[str] = set()
     merged: list[dict] = []
-    for rank in range(max((len(l) for l in lists), default=0)):
+    for rank in range(max((len(lst) for lst in lists), default=0)):
         for lst in lists:
             if rank < len(lst) and lst[rank]["chunk_id"] not in seen:
                 seen.add(lst[rank]["chunk_id"])

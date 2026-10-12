@@ -16,7 +16,7 @@ import re
 import uuid
 from collections import Counter
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import timedelta
 from urllib.parse import urlparse
 
 import sentry_sdk
@@ -41,7 +41,7 @@ sentry_sdk.init(
 from .db import SessionLocal
 from .deps import (
     CurrentUser, get_current_staff_user, get_current_user, get_user_or_staff, require_platform_admin,
-    require_super_admin, require_workspace_role,
+    require_workspace_role,
 )
 from .models import (
     AuditLog, BillingProfile, Product, TriggerEvent, Bot, Chunk, ContentPage, Conversation, Document, IngestJob, Lead, Membership, Message, Notification, Order,
@@ -268,7 +268,6 @@ async def verify_email(body: VerifyEmailRequest):
     if payload is None:
         raise HTTPException(400, "Invalid or expired verification token")
     async with SessionLocal() as session:
-        from datetime import datetime
 
         db_user = await session.get(User, payload["sub"])
         if db_user is None:
@@ -513,7 +512,6 @@ async def accept_invite(body: AcceptInviteRequest):
             raise HTTPException(400, "This invite has already been accepted")
 
         db_user.password_hash = hash_password(body.password)
-        from datetime import datetime
 
         db_user.email_verified_at = utcnow()
         await session.commit()

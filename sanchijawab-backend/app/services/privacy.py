@@ -4,7 +4,7 @@ Child rows are deleted explicitly — the FKs have no ON DELETE CASCADE.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
