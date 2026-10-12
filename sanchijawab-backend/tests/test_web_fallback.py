@@ -1,6 +1,8 @@
 """Knowledge first, the web second; plus the retrieval fix for questions that include the business name."""
 from __future__ import annotations
 
+import pytest
+
 from app import models
 from app.db import SessionLocal
 from app.services import llm, rag
@@ -26,6 +28,19 @@ def test_merge_interleaves_without_repeats():
     a = [{"chunk_id": "1"}, {"chunk_id": "2"}, {"chunk_id": "3"}]
     b = [{"chunk_id": "9"}, {"chunk_id": "2"}]
     assert [c["chunk_id"] for c in _merge_chunks(a, b)] == ["9", "1", "2", "3"]
+
+
+@pytest.fixture(autouse=True)
+def _no_gemini(monkeypatch):
+    # CI has no Gemini key; the question analysis and follow-ups are not what these tests are about.
+    async def fake_analyze(message, history, summary="", business=""):
+        return {"standalone_query": message, "language": "en", "is_conversational": False}
+
+    async def fake_followups(q, a):
+        return []
+
+    monkeypatch.setattr(llm, "fast_analyze", fake_analyze)
+    monkeypatch.setattr(llm, "suggest_follow_ups", fake_followups)
 
 
 async def _make_bot(session, *, web_fallback: bool):
